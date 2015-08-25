@@ -60,6 +60,17 @@ func NewSessionSize(c net.Conn, auth string, bufsize int, timeout int) *Session 
 	return s
 }
 
+func (s *Session) SetKeepAlivePeriod(period int) error {
+	if period == 0 {
+		return s.Conn.SetKeepAlive(false)
+	} else {
+		if err := s.Conn.SetKeepAlive(true); err != nil {
+			return err
+		}
+		return s.Conn.SetKeepAlivePeriod(time.Second * time.Duration(period))
+	}
+}
+
 func (s *Session) Close() error {
 	s.failed.Set(true)
 	s.closed.Set(true)

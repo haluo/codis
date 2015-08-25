@@ -17,7 +17,7 @@ func openProxy() (net.Listener, string) {
 	assert.MustNoError(err)
 
 	s = proxy.New()
-	go s.Serve(l)
+	go s.ServeHTTP(l)
 
 	return l, l.Addr().String()
 }
