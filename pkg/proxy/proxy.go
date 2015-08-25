@@ -21,14 +21,9 @@ type Proxy struct {
 }
 
 func New() *Proxy {
-	return NewWithRouter(rpc.NewToken(), router.New())
-}
-
-func NewWithRouter(token string, router *router.Router) *Proxy {
 	return &Proxy{
-		token: token,
-
-		router: router,
+		token:  rpc.NewToken(),
+		router: router.New(),
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-martini/martini"
+
 	"github.com/wandoulabs/codis/pkg/models"
 	"github.com/wandoulabs/codis/pkg/proxy/router"
 	"github.com/wandoulabs/codis/pkg/utils"
