@@ -12,15 +12,13 @@ import (
 	"github.com/wandoulabs/codis/pkg/utils/log"
 )
 
-const MaxSlotNum = models.DEFAULT_SLOT_NUM
-
 type Router struct {
 	mu sync.Mutex
 
 	auth string
 	pool map[string]*SharedBackendConn
 
-	slots [MaxSlotNum]*Slot
+	slots [models.MaxSlotNum]*Slot
 
 	closed bool
 }
@@ -53,25 +51,34 @@ func (s *Router) Close() error {
 	return nil
 }
 
-var errClosedRouter = errors.New("use of closed router")
+var (
+	errClosedRouter  = errors.New("use of closed router")
+	errInvalidSlotId = errors.New("use of invalid slot id")
+)
 
-func (s *Router) ResetSlot(i int) error {
+func (s *Router) LockSlot(i int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
 		return errClosedRouter
 	}
-	s.resetSlot(i)
+	if !s.isValidSlot(i) {
+		return errInvalidSlotId
+	}
+	s.lockSlot(i)
 	return nil
 }
 
-func (s *Router) FillSlot(i int, addr, from string, lock bool) error {
+func (s *Router) FillSlot(i int, addr, from string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
 		return errClosedRouter
 	}
-	s.fillSlot(i, addr, from, lock)
+	if !s.isValidSlot(i) {
+		return errInvalidSlotId
+	}
+	s.fillSlot(i, addr, from)
 	return nil
 }
 
@@ -115,9 +122,6 @@ func (s *Router) isValidSlot(i int) bool {
 }
 
 func (s *Router) resetSlot(i int) {
-	if !s.isValidSlot(i) {
-		return
-	}
 	slot := s.slots[i]
 	slot.blockAndWait()
 
@@ -128,10 +132,12 @@ func (s *Router) resetSlot(i int) {
 	slot.unblock()
 }
 
-func (s *Router) fillSlot(i int, addr, from string, lock bool) {
-	if !s.isValidSlot(i) {
-		return
-	}
+func (s *Router) lockSlot(i int) {
+	slot := s.slots[i]
+	slot.blockAndWait()
+}
+
+func (s *Router) fillSlot(i int, addr, from string) {
 	slot := s.slots[i]
 	slot.blockAndWait()
 
@@ -155,9 +161,7 @@ func (s *Router) fillSlot(i int, addr, from string, lock bool) {
 		slot.migrate.bc = s.getBackendConn(from)
 	}
 
-	if !lock {
-		slot.unblock()
-	}
+	slot.unblock()
 
 	if slot.migrate.bc != nil {
 		log.Infof("fill slot %04d, backend.addr = %s, migrate.from = %s",

@@ -46,7 +46,7 @@ func (s *OpStats) MarshalJSON() ([]byte, error) {
 }
 
 var cmdstats struct {
-	requests atomic2.Int64
+	total atomic2.Int64
 
 	opmap map[string]*OpStats
 	rwlck sync.RWMutex
@@ -56,8 +56,8 @@ func init() {
 	cmdstats.opmap = make(map[string]*OpStats)
 }
 
-func OpCounts() int64 {
-	return cmdstats.requests.Get()
+func OpsTotal() int64 {
+	return cmdstats.total.Get()
 }
 
 func GetOpStats(opstr string, create bool) *OpStats {
@@ -93,5 +93,5 @@ func incrOpStats(opstr string, usecs int64) {
 	s := GetOpStats(opstr, true)
 	s.calls.Incr()
 	s.usecs.Add(usecs)
-	cmdstats.requests.Incr()
+	cmdstats.total.Incr()
 }
