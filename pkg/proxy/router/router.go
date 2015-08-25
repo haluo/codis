@@ -57,6 +57,7 @@ func (s *Router) GetSlots() []*models.SlotInfo {
 	slots := make([]*models.SlotInfo, len(s.slots))
 	for i, slot := range s.slots {
 		slots[i] = &models.SlotInfo{
+			Id:          i,
 			Locked:      slot.lock.hold,
 			Target:      slot.backend.addr,
 			MigrateFrom: slot.migrate.from,
