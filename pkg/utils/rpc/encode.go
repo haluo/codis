@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"encoding/base64"
+	"fmt"
 
 	"github.com/wandoulabs/codis/pkg/utils/errors"
 )
@@ -16,4 +17,8 @@ func Decode64(data string) (string, error) {
 		return "", errors.Errorf("invalid base64 encoding")
 	}
 	return string(b[1:]), nil
+}
+
+func EncodeURL(host string, format string, args ...interface{}) string {
+	return "http://" + host + fmt.Sprintf(format, args...)
 }

@@ -22,17 +22,17 @@ func openProxy() (net.Listener, string) {
 	return l, l.Addr().String()
 }
 
-func TestProxyInfo(x *testing.T) {
+func TestStats(x *testing.T) {
 	l, addr := openProxy()
 	defer l.Close()
 
 	var c = proxy.NewApiClient(addr)
 
-	info, err := c.GetInfo()
+	stats, err := c.GetStats()
 	assert.MustNoError(err)
-	assert.Must(info.Version == utils.Version)
-	assert.Must(info.Compile == utils.Compile)
-	assert.Must(info.Token == s.GetToken())
+	assert.Must(stats.Version == utils.Version)
+	assert.Must(stats.Compile == utils.Compile)
+	assert.Must(stats.Token == s.GetToken())
 }
 
 func TestProxyPing(x *testing.T) {
@@ -53,7 +53,7 @@ func verifySlots(c *proxy.ApiClient, expect map[int]*models.SlotInfo) {
 	for i, slot := range expect {
 		if slot != nil {
 			assert.Must(slots[i].Id == i)
-			assert.Must(slot.Target == slots[i].Target)
+			assert.Must(slot.Backend == slots[i].Backend)
 			assert.Must(slot.Locked == slots[i].Locked)
 			assert.Must(slot.MigrateFrom == slots[i].MigrateFrom)
 		}
@@ -100,7 +100,7 @@ func TestFillSlot(x *testing.T) {
 	for i := 0; i < 16; i++ {
 		addr := "x.x.x.x:xxxx"
 		assert.MustNoError(c.FillSlot(token, i, addr, ""))
-		expect[i] = &models.SlotInfo{Locked: false, Target: addr}
+		expect[i] = &models.SlotInfo{Locked: false, Backend: addr}
 	}
 	verifySlots(c, expect)
 
@@ -114,7 +114,7 @@ func TestFillSlot(x *testing.T) {
 		addr := "y.y.y.y:yyyy"
 		from := "z.z.z.z:zzzz"
 		assert.MustNoError(c.FillSlot(token, i, addr, from))
-		expect[i] = &models.SlotInfo{Locked: false, Target: addr, MigrateFrom: from}
+		expect[i] = &models.SlotInfo{Locked: false, Backend: addr, MigrateFrom: from}
 	}
 	verifySlots(c, expect)
 

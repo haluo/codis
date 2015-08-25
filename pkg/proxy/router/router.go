@@ -59,7 +59,7 @@ func (s *Router) GetSlots() []*models.SlotInfo {
 		slots[i] = &models.SlotInfo{
 			Id:          i,
 			Locked:      slot.lock.hold,
-			Target:      slot.backend.addr,
+			Backend:     slot.backend.addr,
 			MigrateFrom: slot.migrate.from,
 		}
 	}

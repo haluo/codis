@@ -3,7 +3,6 @@ package proxy
 import (
 	"net"
 	"net/http"
-	"os"
 	"sync"
 
 	"github.com/wandoulabs/codis/pkg/models"
@@ -22,13 +21,14 @@ type Proxy struct {
 }
 
 func New() *Proxy {
-	hostname, _ := os.Hostname()
-	token := rpc.NewToken(hostname)
+	return NewWithRouter(rpc.NewToken(), router.New())
+}
 
+func NewWithRouter(token string, router *router.Router) *Proxy {
 	return &Proxy{
 		token: token,
 
-		router: router.New(),
+		router: router,
 	}
 }
 

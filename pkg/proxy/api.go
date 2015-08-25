@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -14,7 +13,7 @@ import (
 	"github.com/wandoulabs/codis/pkg/utils/rpc"
 )
 
-type ProxyInfo struct {
+type Stats struct {
 	Version string `json:"version"`
 	Compile string `json:"compile"`
 
@@ -39,7 +38,7 @@ func newApiServer(p *Proxy) http.Handler {
 	api := &apiServer{p}
 
 	r := martini.NewRouter()
-	r.Get("/", api.GetInfo)
+	r.Get("/", api.GetStats)
 	r.Get("/slots", api.GetSlots)
 
 	r.Put("/api/:token/ping", api.Ping)
@@ -72,23 +71,19 @@ func (s *apiServer) paramSlotId(params martini.Params) (int, error) {
 	if err != nil {
 		return 0, errors.New("Invalid SlotId: " + err.Error())
 	}
-	if v >= 0 && v < int64(models.MaxSlotNum) {
-		return int(v), nil
-	} else {
-		return 0, errors.New("Invalid SlotId: out of range")
-	}
+	return int(v), nil
 }
 
-func (s *apiServer) GetInfo() (int, string) {
-	info := &ProxyInfo{
+func (s *apiServer) GetStats() (int, string) {
+	stats := &Stats{
 		Version:  utils.Version,
 		Compile:  utils.Compile,
 		UnixTime: time.Now().Unix(),
 	}
-	info.Token = s.proxy.GetToken()
-	info.Ops.Total = router.OpsTotal()
-	info.Ops.Cmds = router.GetAllOpStats()
-	return rpc.ApiResponseJson(info)
+	stats.Token = s.proxy.GetToken()
+	stats.Ops.Total = router.OpsTotal()
+	stats.Ops.Cmds = router.GetAllOpStats()
+	return rpc.ApiResponseJson(stats)
 }
 
 func (s *apiServer) GetSlots() (int, string) {
@@ -160,24 +155,20 @@ func NewApiClient(host string) *ApiClient {
 	return &ApiClient{host}
 }
 
-func (c *ApiClient) encodeURL(urlfmt string, args ...interface{}) string {
-	return "http://" + c.Host + fmt.Sprintf(urlfmt, args...)
+func (c *ApiClient) newGetRequest(reply interface{}, format string, args ...interface{}) error {
+	return rpc.ApiGetAsJson(rpc.EncodeURL(c.Host, format, args...), reply)
 }
 
-func (c *ApiClient) newGetRequest(reply interface{}, urlfmt string, args ...interface{}) error {
-	return rpc.ApiGetAsJson(c.encodeURL(urlfmt, args...), reply)
+func (c *ApiClient) newPutRequest(reply interface{}, format string, args ...interface{}) error {
+	return rpc.ApiPutAsJson(rpc.EncodeURL(c.Host, format, args...), reply)
 }
 
-func (c *ApiClient) newPutRequest(reply interface{}, urlfmt string, args ...interface{}) error {
-	return rpc.ApiPutAsJson(c.encodeURL(urlfmt, args...), reply)
-}
-
-func (c *ApiClient) GetInfo() (*ProxyInfo, error) {
-	info := &ProxyInfo{}
-	if err := c.newGetRequest(info, "/"); err != nil {
+func (c *ApiClient) GetStats() (*Stats, error) {
+	stats := &Stats{}
+	if err := c.newGetRequest(stats, "/"); err != nil {
 		return nil, err
 	}
-	return info, nil
+	return stats, nil
 }
 
 func (c *ApiClient) GetSlots() ([]*models.SlotInfo, error) {
