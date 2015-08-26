@@ -59,7 +59,7 @@ func (s *Router) GetSlots() []*models.SlotInfo {
 		slots[i] = &models.SlotInfo{
 			Id:          i,
 			Locked:      slot.lock.hold,
-			Backend:     slot.backend.addr,
+			BackendAddr: slot.backend.addr,
 			MigrateFrom: slot.migrate.from,
 		}
 	}
@@ -71,7 +71,7 @@ var (
 	errInvalidSlotId = errors.New("use of invalid slot id")
 )
 
-func (s *Router) LockSlot(i int) error {
+func (s *Router) FillSlot(i int, addr, from string, locked bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -80,20 +80,7 @@ func (s *Router) LockSlot(i int) error {
 	if !s.isValidSlot(i) {
 		return errInvalidSlotId
 	}
-	s.lockSlot(i)
-	return nil
-}
-
-func (s *Router) FillSlot(i int, addr, from string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
-		return errClosedRouter
-	}
-	if !s.isValidSlot(i) {
-		return errInvalidSlotId
-	}
-	s.fillSlot(i, addr, from)
+	s.fillSlot(i, addr, from, locked)
 	return nil
 }
 
@@ -147,12 +134,7 @@ func (s *Router) resetSlot(i int) {
 	slot.unblock()
 }
 
-func (s *Router) lockSlot(i int) {
-	slot := s.slots[i]
-	slot.blockAndWait()
-}
-
-func (s *Router) fillSlot(i int, addr, from string) {
+func (s *Router) fillSlot(i int, addr, from string, locked bool) {
 	slot := s.slots[i]
 	slot.blockAndWait()
 
@@ -176,13 +158,15 @@ func (s *Router) fillSlot(i int, addr, from string) {
 		slot.migrate.bc = s.getBackendConn(from)
 	}
 
-	slot.unblock()
+	if !locked {
+		slot.unblock()
+	}
 
 	if slot.migrate.bc != nil {
-		log.Infof("fill slot %04d, backend.addr = %s, migrate.from = %s",
-			i, slot.backend.addr, slot.migrate.from)
+		log.Infof("fill slot %04d, backend.addr = %s, migrate.from = %s, locked = %t",
+			i, slot.backend.addr, slot.migrate.from, locked)
 	} else {
-		log.Infof("fill slot %04d, backend.addr = %s",
-			i, slot.backend.addr)
+		log.Infof("fill slot %04d, backend.addr = %s, locked = %t",
+			i, slot.backend.addr, locked)
 	}
 }

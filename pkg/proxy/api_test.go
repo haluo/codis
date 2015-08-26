@@ -22,63 +22,47 @@ func openProxy() (net.Listener, string) {
 	return l, l.Addr().String()
 }
 
+func TestInfo(x *testing.T) {
+	l, addr := openProxy()
+	defer l.Close()
+
+	var c = proxy.NewApiClient(addr)
+
+	info, err := c.GetInfo()
+	assert.MustNoError(err)
+	assert.Must(info.Version == utils.Version)
+	assert.Must(info.Compile == utils.Compile)
+	assert.Must(info.Token == s.GetToken())
+}
+
 func TestStats(x *testing.T) {
 	l, addr := openProxy()
 	defer l.Close()
 
 	var c = proxy.NewApiClient(addr)
 
-	stats, err := c.GetStats()
-	assert.MustNoError(err)
-	assert.Must(stats.Version == utils.Version)
-	assert.Must(stats.Compile == utils.Compile)
-	assert.Must(stats.Token == s.GetToken())
-}
+	_, err1 := c.GetStats("Bad Token.")
+	assert.Must(err1 != nil)
 
-func TestProxyPing(x *testing.T) {
-	l, addr := openProxy()
-	defer l.Close()
-
-	var c = proxy.NewApiClient(addr)
-
-	assert.Must(c.Ping("Bad Token.") != nil)
-	assert.Must(c.Ping(s.GetToken()) == nil)
+	_, err2 := c.GetStats(s.GetToken())
+	assert.MustNoError(err2)
 }
 
 func verifySlots(c *proxy.ApiClient, expect map[int]*models.SlotInfo) {
-	slots, err := c.GetSlots()
+	info, err := c.GetInfo()
 	assert.MustNoError(err)
+
+	slots := info.Slots
 	assert.Must(len(slots) == models.MaxSlotNum)
 
 	for i, slot := range expect {
 		if slot != nil {
 			assert.Must(slots[i].Id == i)
-			assert.Must(slot.Backend == slots[i].Backend)
 			assert.Must(slot.Locked == slots[i].Locked)
+			assert.Must(slot.BackendAddr == slots[i].BackendAddr)
 			assert.Must(slot.MigrateFrom == slots[i].MigrateFrom)
 		}
 	}
-}
-
-func TestLockSlot(x *testing.T) {
-	l, addr := openProxy()
-	defer l.Close()
-
-	token := s.GetToken()
-
-	var c = proxy.NewApiClient(addr)
-
-	expect := make(map[int]*models.SlotInfo)
-
-	for i := 0; i < 16; i++ {
-		assert.MustNoError(c.LockSlot(token, i))
-		assert.MustNoError(c.LockSlot(token, i))
-		expect[i] = &models.SlotInfo{Locked: true}
-	}
-	verifySlots(c, expect)
-
-	assert.Must(c.LockSlot(token, -1) != nil)
-	assert.Must(c.LockSlot(token, models.MaxSlotNum) != nil)
 }
 
 func TestFillSlot(x *testing.T) {
@@ -92,37 +76,32 @@ func TestFillSlot(x *testing.T) {
 	expect := make(map[int]*models.SlotInfo)
 
 	for i := 0; i < 16; i++ {
-		assert.MustNoError(c.LockSlot(token, i))
-		expect[i] = &models.SlotInfo{Locked: true}
+		slot := &models.SlotInfo{
+			Id:          i,
+			Locked:      i%2 == 0,
+			BackendAddr: "x.x.x.x:xxxx",
+		}
+		assert.MustNoError(c.FillSlot(token, slot))
+		expect[i] = slot
 	}
 	verifySlots(c, expect)
 
+	slots := []*models.SlotInfo{}
 	for i := 0; i < 16; i++ {
-		addr := "x.x.x.x:xxxx"
-		assert.MustNoError(c.FillSlot(token, i, addr, ""))
-		expect[i] = &models.SlotInfo{Locked: false, Backend: addr}
+		slot := &models.SlotInfo{
+			Id:          i,
+			Locked:      i%2 != 0,
+			BackendAddr: "y.y.y.y:yyyy",
+			MigrateFrom: "x.x.x.x:xxxx",
+		}
+		slots = append(slots, slot)
+		expect[i] = slot
 	}
+	assert.MustNoError(c.FillSlot(token, slots...))
 	verifySlots(c, expect)
-
-	for i := 0; i < 16; i++ {
-		assert.MustNoError(c.LockSlot(token, i))
-		expect[i].Locked = true
-	}
-	verifySlots(c, expect)
-
-	for i := 0; i < 16; i++ {
-		addr := "y.y.y.y:yyyy"
-		from := "z.z.z.z:zzzz"
-		assert.MustNoError(c.FillSlot(token, i, addr, from))
-		expect[i] = &models.SlotInfo{Locked: false, Backend: addr, MigrateFrom: from}
-	}
-	verifySlots(c, expect)
-
-	assert.Must(c.LockSlot(token, -1) != nil)
-	assert.Must(c.LockSlot(token, models.MaxSlotNum) != nil)
 }
 
-func TestShutdown(x *testing.T) {
+func TestStartAndShutdown(x *testing.T) {
 	l, addr := openProxy()
 	defer l.Close()
 
@@ -133,16 +112,21 @@ func TestShutdown(x *testing.T) {
 	expect := make(map[int]*models.SlotInfo)
 
 	for i := 0; i < 16; i++ {
-		assert.MustNoError(c.LockSlot(token, i))
-		expect[i] = &models.SlotInfo{Locked: true}
+		slot := &models.SlotInfo{
+			Id:          i,
+			BackendAddr: "x.x.x.x:xxxx",
+		}
+		assert.MustNoError(c.FillSlot(token, slot))
+		expect[i] = slot
 	}
 	verifySlots(c, expect)
 
-	err := c.Shutdown(token)
-	assert.MustNoError(err)
+	err1 := c.Start(token)
+	assert.MustNoError(err1)
 
-	for i := 0; i < models.MaxSlotNum; i++ {
-		expect[i] = &models.SlotInfo{}
-	}
-	verifySlots(c, expect)
+	err2 := c.Shutdown(token)
+	assert.MustNoError(err2)
+
+	err3 := c.Start(token)
+	assert.Must(err3 != nil)
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/c4pt0r/cfg"
 	"github.com/wandoulabs/zkhelper"
@@ -14,6 +15,8 @@ import (
 	"github.com/wandoulabs/codis/pkg/utils/errors"
 	"github.com/wandoulabs/codis/pkg/utils/log"
 )
+
+var BootTime = time.Now()
 
 func InitConfig() (*cfg.Cfg, error) {
 	configFile := os.Getenv("CODIS_CONF")

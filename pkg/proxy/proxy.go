@@ -17,12 +17,19 @@ type Proxy struct {
 
 	token string
 
-	signal chan interface{}
+	init, exit struct {
+		c chan struct{}
+		sync.Once
+	}
 	closed bool
 
 	config *Config
 	router *router.Router
 }
+
+var (
+	errClosedProxy = errors.New("use of closed proxy")
+)
 
 func New() *Proxy {
 	return NewWithConfig(NewDefaultConfig())
@@ -30,38 +37,42 @@ func New() *Proxy {
 
 func NewWithConfig(config *Config) *Proxy {
 	s := &Proxy{
-		token: rpc.NewToken(),
-
-		signal: make(chan interface{}),
-
+		token:  rpc.NewToken(),
 		config: config,
 		router: router.NewWithAuth(config.ProductAuth),
 	}
+	s.init.c = make(chan struct{})
+	s.exit.c = make(chan struct{})
 
-	go func() {
-		ticker := time.NewTicker(time.Second)
-		defer ticker.Stop()
-		var tick = 0
-		for {
-			select {
-			case <-ticker.C:
-			case <-s.signal:
-				return
-			}
-			if maxTick := config.BackendPingPeriod; maxTick != 0 {
+	go s.keepAlive()
+
+	return s
+}
+
+func (s *Proxy) keepAlive() {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for tick := 0; ; {
+		select {
+		case <-s.exit.c:
+			return
+		case <-ticker.C:
+			if maxTick := s.config.BackendPingPeriod; maxTick != 0 {
 				if tick++; tick >= maxTick {
 					tick = 0
 					s.router.KeepAlive()
 				}
 			}
 		}
-	}()
-	return s
+	}
 }
 
 func (s *Proxy) GetSlots() []*models.SlotInfo {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed {
+		return nil
+	}
 	return s.router.GetSlots()
 }
 
@@ -69,64 +80,77 @@ func (s *Proxy) GetToken() string {
 	return s.token
 }
 
-func (s *Proxy) LockSlot(i int) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.router.LockSlot(i)
+func (s *Proxy) GetConfig() *Config {
+	return s.config
 }
 
-func (s *Proxy) FillSlot(i int, addr, from string) error {
+func (s *Proxy) FillSlot(slots ...*models.SlotInfo) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.router.FillSlot(i, addr, from)
+	if s.closed {
+		return errClosedProxy
+	}
+	for _, slot := range slots {
+		if err := s.router.FillSlot(slot.Id, slot.BackendAddr, slot.MigrateFrom, slot.Locked); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Proxy) Start() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return errClosedProxy
+	}
+	s.init.Do(func() {
+		close(s.init.c)
+	})
+	return nil
 }
 
 func (s *Proxy) Shutdown() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed {
-		return nil
-	}
-	s.closed = true
-	close(s.signal)
-	s.router.Close()
+	s.exit.Do(func() {
+		s.router.Close()
+		s.closed = true
+		close(s.exit.c)
+	})
 	return nil
 }
 
 func (s *Proxy) ServeHTTP(l net.Listener) error {
-	sig := make(chan interface{})
-	defer close(sig)
+	defer l.Close()
+
+	eh := make(chan error, 1)
 
 	go func() {
-		select {
-		case <-sig:
-		case <-s.signal:
-		}
-		l.Close()
+		h := http.NewServeMux()
+		h.Handle("/", newApiServer(s))
+		hs := &http.Server{Handler: h}
+		eh <- hs.Serve(l)
 	}()
 
-	h := http.NewServeMux()
-	h.Handle("/", newApiServer(s))
-
-	hs := &http.Server{Handler: h}
-	return errors.Trace(hs.Serve(l))
+	select {
+	case <-s.exit.c:
+		return errClosedProxy
+	case err := <-eh:
+		return err
+	}
 }
 
 func (s *Proxy) Serve(l net.Listener) error {
-	sig := make(chan interface{})
-	defer close(sig)
+	defer l.Close()
 
-	go func() {
-		select {
-		case <-sig:
-		case <-s.signal:
-		}
-		l.Close()
-	}()
+	select {
+	case <-s.exit.c:
+		return errClosedProxy
+	case <-s.init.c:
+	}
 
 	ch := make(chan net.Conn, 4096)
-	defer close(ch)
-
 	go func() {
 		for c := range ch {
 			x := router.NewSessionSize(c, s.config.ProductAuth,
@@ -138,12 +162,24 @@ func (s *Proxy) Serve(l net.Listener) error {
 		}
 	}()
 
-	for {
-		c, err := l.Accept()
-		if err != nil {
-			return nil
-		} else {
-			ch <- c
+	eh := make(chan error, 1)
+	go func() {
+		defer close(ch)
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				eh <- err
+				return
+			} else {
+				ch <- c
+			}
 		}
+	}()
+
+	select {
+	case <-s.exit.c:
+		return errClosedProxy
+	case err := <-eh:
+		return err
 	}
 }

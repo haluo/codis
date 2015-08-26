@@ -2,10 +2,11 @@ package proxy
 
 import (
 	"net/http"
-	"strconv"
+	"os"
 	"time"
 
 	"github.com/go-martini/martini"
+	"github.com/martini-contrib/binding"
 
 	"github.com/wandoulabs/codis/pkg/models"
 	"github.com/wandoulabs/codis/pkg/proxy/router"
@@ -14,14 +15,25 @@ import (
 	"github.com/wandoulabs/codis/pkg/utils/rpc"
 )
 
-type Stats struct {
+type Info struct {
 	Version string `json:"version"`
 	Compile string `json:"compile"`
 
-	UnixTime int64 `json:"unixtime"`
+	UnixTime int64  `json:"unixtime"`
+	BootTime string `json:"boottime"`
+
+	Pid      int     `json:"pid"`
+	Pwd      string  `json:"pwd"`
+	Hostname string  `json:"hostname"`
+	Config   *Config `json:"config"`
 
 	Token string `json:"token"`
 
+	Slots []*models.SlotInfo `json:"slots"`
+	Stats Stats              `json:"stats"`
+}
+
+type Stats struct {
 	Ops struct {
 		Total int64             `json:"total"`
 		Cmds  []*router.OpStats `json:"cmds,omitempty"`
@@ -39,12 +51,10 @@ func newApiServer(p *Proxy) http.Handler {
 	api := &apiServer{p}
 
 	r := martini.NewRouter()
-	r.Get("/", api.GetStats)
-	r.Get("/slots", api.GetSlots)
-
-	r.Put("/api/:token/ping", api.Ping)
-	r.Put("/api/:token/lockslot/:slotid", api.LockSlot)
-	r.Put("/api/:token/fillslot/:slotid/:addr64/:from64", api.FillSlot)
+	r.Get("/", api.Info)
+	r.Get("/api/:token/stats", api.Stats)
+	r.Put("/api/:token/start", api.Start)
+	r.Put("/api/:token/fillslot", binding.Json([]*models.SlotInfo{}), api.FillSlot)
 	r.Put("/api/:token/shutdown", api.Shutdown)
 
 	m.MapTo(r, (*martini.Routes)(nil))
@@ -63,74 +73,52 @@ func (s *apiServer) verifyToken(params martini.Params) error {
 	return nil
 }
 
-func (s *apiServer) paramSlotId(params martini.Params) (int, error) {
-	t := params["slotid"]
-	if t == "" {
-		return 0, errors.New("Missing SlotId")
-	}
-	v, err := strconv.ParseInt(t, 10, 64)
-	if err != nil {
-		return 0, errors.New("Invalid SlotId: " + err.Error())
-	}
-	return int(v), nil
-}
-
-func (s *apiServer) GetStats() (int, string) {
-	stats := &Stats{
+func (s *apiServer) Info() (int, string) {
+	info := &Info{
 		Version:  utils.Version,
 		Compile:  utils.Compile,
 		UnixTime: time.Now().Unix(),
+		BootTime: utils.BootTime.String(),
 	}
-	stats.Token = s.proxy.GetToken()
-	stats.Ops.Total = router.OpsTotal()
-	stats.Ops.Cmds = router.GetAllOpStats()
-	return rpc.ApiResponseJson(stats)
+	info.Pid = os.Getpid()
+	info.Pwd, _ = os.Getwd()
+	info.Hostname, _ = os.Hostname()
+	info.Config = s.proxy.GetConfig()
+
+	info.Token = s.proxy.GetToken()
+	info.Slots = s.proxy.GetSlots()
+	info.Stats.Ops.Total = router.OpsTotal()
+	info.Stats.Ops.Cmds = router.GetAllOpStats()
+	return rpc.ApiResponseJson(info)
 }
 
-func (s *apiServer) GetSlots() (int, string) {
-	return rpc.ApiResponseJson(s.proxy.GetSlots())
-}
-
-func (s *apiServer) Ping(params martini.Params) (int, string) {
+func (s *apiServer) Stats(params martini.Params) (int, string) {
 	if err := s.verifyToken(params); err != nil {
+		return rpc.ApiResponseError(err)
+	} else {
+		stats := &Stats{}
+		stats.Ops.Total = router.OpsTotal()
+		stats.Ops.Cmds = router.GetAllOpStats()
+		return rpc.ApiResponseJson(stats)
+	}
+}
+
+func (s *apiServer) Start(params martini.Params) (int, string) {
+	if err := s.verifyToken(params); err != nil {
+		return rpc.ApiResponseError(err)
+	}
+	if err := s.proxy.Start(); err != nil {
 		return rpc.ApiResponseError(err)
 	} else {
 		return rpc.ApiResponseJson("OK")
 	}
 }
 
-func (s *apiServer) LockSlot(params martini.Params) (int, string) {
+func (s *apiServer) FillSlot(slots []*models.SlotInfo, params martini.Params) (int, string) {
 	if err := s.verifyToken(params); err != nil {
 		return rpc.ApiResponseError(err)
 	}
-	i, err := s.paramSlotId(params)
-	if err != nil {
-		return rpc.ApiResponseError(err)
-	}
-	if err := s.proxy.LockSlot(i); err != nil {
-		return rpc.ApiResponseError(err)
-	} else {
-		return rpc.ApiResponseJson("OK")
-	}
-}
-
-func (s *apiServer) FillSlot(params martini.Params) (int, string) {
-	if err := s.verifyToken(params); err != nil {
-		return rpc.ApiResponseError(err)
-	}
-	i, err := s.paramSlotId(params)
-	if err != nil {
-		return rpc.ApiResponseError(err)
-	}
-	addr, err := rpc.Decode64(params["addr64"])
-	if err != nil {
-		return rpc.ApiResponseError(err)
-	}
-	from, err := rpc.Decode64(params["from64"])
-	if err != nil {
-		return rpc.ApiResponseError(err)
-	}
-	if err := s.proxy.FillSlot(i, addr, from); err != nil {
+	if err := s.proxy.FillSlot(slots...); err != nil {
 		return rpc.ApiResponseError(err)
 	} else {
 		return rpc.ApiResponseJson("OK")
@@ -156,44 +144,39 @@ func NewApiClient(host string) *ApiClient {
 	return &ApiClient{host}
 }
 
-func (c *ApiClient) newGetRequest(reply interface{}, format string, args ...interface{}) error {
-	return rpc.ApiGetAsJson(rpc.EncodeURL(c.Host, format, args...), reply)
+func (c *ApiClient) encodeURL(format string, args ...interface{}) string {
+	return rpc.EncodeURL(c.Host, format, args...)
 }
 
-func (c *ApiClient) newPutRequest(reply interface{}, format string, args ...interface{}) error {
-	return rpc.ApiPutAsJson(rpc.EncodeURL(c.Host, format, args...), reply)
+func (c *ApiClient) GetInfo() (*Info, error) {
+	url := c.encodeURL("/")
+	info := &Info{}
+	if err := rpc.ApiGetJson(url, info); err != nil {
+		return nil, err
+	}
+	return info, nil
 }
 
-func (c *ApiClient) GetStats() (*Stats, error) {
+func (c *ApiClient) GetStats(token string) (*Stats, error) {
+	url := c.encodeURL("/api/%s/stats", token)
 	stats := &Stats{}
-	if err := c.newGetRequest(stats, "/"); err != nil {
+	if err := rpc.ApiGetJson(url, stats); err != nil {
 		return nil, err
 	}
 	return stats, nil
 }
 
-func (c *ApiClient) GetSlots() ([]*models.SlotInfo, error) {
-	slots := []*models.SlotInfo{}
-	if err := c.newGetRequest(&slots, "/slots"); err != nil {
-		return nil, err
-	}
-	return slots, nil
+func (c *ApiClient) Start(token string) error {
+	url := c.encodeURL("/api/%s/start", token)
+	return rpc.ApiPutJson(url, nil, nil)
 }
 
-func (c *ApiClient) Ping(token string) error {
-	return c.newPutRequest(nil, "/api/%s/ping", token)
-}
-
-func (c *ApiClient) LockSlot(token string, i int) error {
-	return c.newPutRequest(nil, "/api/%s/lockslot/%d", token, i)
-}
-
-func (c *ApiClient) FillSlot(token string, i int, addr, from string) error {
-	addr64 := rpc.Encode64(addr)
-	from64 := rpc.Encode64(from)
-	return c.newPutRequest(nil, "/api/%s/fillslot/%d/%s/%s", token, i, addr64, from64)
+func (c *ApiClient) FillSlot(token string, slots ...*models.SlotInfo) error {
+	url := c.encodeURL("/api/%s/fillslot", token)
+	return rpc.ApiPutJson(url, slots, nil)
 }
 
 func (c *ApiClient) Shutdown(token string) error {
-	return c.newPutRequest(nil, "/api/%s/shutdown", token)
+	url := c.encodeURL("/api/%s/shutdown", token)
+	return rpc.ApiPutJson(url, nil, nil)
 }

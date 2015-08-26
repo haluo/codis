@@ -1,11 +1,14 @@
 package rpc
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/wandoulabs/codis/pkg/utils/atomic2"
@@ -52,14 +55,6 @@ func responseBodyAsBytes(rsp *http.Response) ([]byte, error) {
 	return b, nil
 }
 
-func responseBodyAsString(rsp *http.Response) (string, error) {
-	b, err := responseBodyAsBytes(rsp)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
-}
-
 func responseBodyAsError(rsp *http.Response) (error, error) {
 	b, err := responseBodyAsBytes(rsp)
 	if err != nil {
@@ -78,23 +73,28 @@ func responseBodyAsError(rsp *http.Response) (error, error) {
 	}, nil
 }
 
-func ApiGet(url string) ([]byte, error) {
-	return apiRequest(MethodGet, url)
-}
+func apiRequestJson(method string, url string, args, reply interface{}) error {
+	var body []byte
+	if args != nil {
+		b, err := json.MarshalIndent(args, "", "    ")
+		if err != nil {
+			return errors.Trace(err)
+		}
+		body = b
+	}
 
-func ApiPut(url string) ([]byte, error) {
-	return apiRequest(MethodPut, url)
-}
-
-func apiRequest(method string, url string) ([]byte, error) {
-	req, err := http.NewRequest(method, url, nil)
+	req, err := http.NewRequest(method, url, bytes.NewReader(body))
 	if err != nil {
-		return nil, errors.Trace(err)
+		return errors.Trace(err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Length", strconv.Itoa(len(body)))
 	}
 
 	rsp, err := client.Do(req)
 	if err != nil {
-		return nil, errors.Trace(err)
+		return errors.Trace(err)
 	}
 	defer func() {
 		io.Copy(ioutil.Discard, rsp.Body)
@@ -103,43 +103,36 @@ func apiRequest(method string, url string) ([]byte, error) {
 
 	switch rsp.StatusCode {
 	case 200:
-		return responseBodyAsBytes(rsp)
+		b, err := responseBodyAsBytes(rsp)
+		if err != nil {
+			return err
+		}
+		if reply == nil {
+			return nil
+		}
+		if err := json.Unmarshal(b, reply); err != nil {
+			return errors.Trace(err)
+		} else {
+			return nil
+		}
 	case 500:
 		e, err := responseBodyAsError(rsp)
 		if err != nil {
-			return nil, err
+			return err
+		} else {
+			return e
 		}
-		return nil, e
 	default:
-		return nil, errors.Errorf("[%d] %s", rsp.StatusCode, http.StatusText(rsp.StatusCode))
+		return errors.Errorf("[%d] %s", rsp.StatusCode, http.StatusText(rsp.StatusCode))
 	}
 }
 
-func ApiGetAsJson(url string, reply interface{}) error {
-	return apiRequestAsJson(MethodGet, url, reply)
+func ApiGetJson(url string, reply interface{}) error {
+	return apiRequestJson(MethodGet, url, nil, reply)
 }
 
-func ApiPutAsJson(url string, reply interface{}) error {
-	return apiRequestAsJson(MethodPut, url, reply)
-}
-
-func apiRequestAsJson(method string, url string, reply interface{}) error {
-	b, err := apiRequest(method, url)
-	if err != nil {
-		return err
-	}
-	if reply == nil {
-		return nil
-	}
-	if err := json.Unmarshal(b, reply); err != nil {
-		return errors.Trace(err)
-	} else {
-		return nil
-	}
-}
-
-func ApiResponseString(s string) (int, string) {
-	return 200, s
+func ApiPutJson(url string, args, reply interface{}) error {
+	return apiRequestJson(MethodPut, url, args, reply)
 }
 
 func ApiResponseError(err error) (int, string) {
@@ -163,6 +156,10 @@ func ApiResponseJson(v interface{}) (int, string) {
 	if err != nil {
 		return ApiResponseError(errors.Trace(err))
 	} else {
-		return ApiResponseString(string(b))
+		return 200, string(b)
 	}
+}
+
+func EncodeURL(host string, format string, args ...interface{}) string {
+	return "http://" + host + fmt.Sprintf(format, args...)
 }

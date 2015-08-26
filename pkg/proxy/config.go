@@ -9,18 +9,18 @@ import (
 )
 
 type Config struct {
-	ServAddr string `toml:"serv_addr"`
-	HttpAddr string `toml:"http_addr"`
+	ServAddr string `toml:"serv_addr" json:"serv_addr"`
+	HttpAddr string `toml:"http_addr" json:"http_addr"`
 
-	ProductName   string `toml:"product_name"`
-	ProductAuth   string `toml:"product_auth"`
-	DashboardAddr string `toml:"dashboard_addr"`
+	ProductName   string `toml:"product_name" json:"product_name"`
+	ProductAuth   string `toml:"product_auth" json:"-"`
+	DashboardAddr string `toml:"dashboard_addr" json:"dashboard_addr"`
 
-	BackendPingPeriod      int `toml:"backend_ping_period"`
-	SessionMaxTimeout      int `toml:"session_max_timeout"`
-	SessionMaxBufSize      int `toml:"session_max_bufsize"`
-	SessionMaxPipeline     int `toml:"session_max_pipeline"`
-	SessionKeepAlivePeriod int `toml:"session_keepalive_period"`
+	BackendPingPeriod      int `toml:"backend_ping_period" json:"backend_ping_period"`
+	SessionMaxTimeout      int `toml:"session_max_timeout" json:"session_max_timeout"`
+	SessionMaxBufSize      int `toml:"session_max_bufsize" json:"session_max_bufsize"`
+	SessionMaxPipeline     int `toml:"session_max_pipeline" json:"session_max_pipeline"`
+	SessionKeepAlivePeriod int `toml:"session_keepalive_period" json:"session_keepalive_period"`
 }
 
 func NewDefaultConfig() *Config {
