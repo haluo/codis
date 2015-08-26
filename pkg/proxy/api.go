@@ -53,9 +53,9 @@ func newApiServer(p *Proxy) http.Handler {
 	r := martini.NewRouter()
 	r.Get("/", api.Info)
 	r.Get("/api/:token/stats", api.Stats)
-	r.Put("/api/:token/start", api.Start)
-	r.Put("/api/:token/fillslot", binding.Json([]*models.SlotInfo{}), api.FillSlot)
+	r.Put("/api/:token/online", api.Online)
 	r.Put("/api/:token/shutdown", api.Shutdown)
+	r.Put("/api/:token/fillslot", binding.Json([]*models.SlotInfo{}), api.FillSlot)
 
 	m.MapTo(r, (*martini.Routes)(nil))
 	m.Action(r.Handle)
@@ -103,11 +103,22 @@ func (s *apiServer) Stats(params martini.Params) (int, string) {
 	}
 }
 
-func (s *apiServer) Start(params martini.Params) (int, string) {
+func (s *apiServer) Online(params martini.Params) (int, string) {
 	if err := s.verifyToken(params); err != nil {
 		return rpc.ApiResponseError(err)
 	}
 	if err := s.proxy.Start(); err != nil {
+		return rpc.ApiResponseError(err)
+	} else {
+		return rpc.ApiResponseJson("OK")
+	}
+}
+
+func (s *apiServer) Shutdown(params martini.Params) (int, string) {
+	if err := s.verifyToken(params); err != nil {
+		return rpc.ApiResponseError(err)
+	}
+	if err := s.proxy.Close(); err != nil {
 		return rpc.ApiResponseError(err)
 	} else {
 		return rpc.ApiResponseJson("OK")
@@ -119,17 +130,6 @@ func (s *apiServer) FillSlot(slots []*models.SlotInfo, params martini.Params) (i
 		return rpc.ApiResponseError(err)
 	}
 	if err := s.proxy.FillSlot(slots...); err != nil {
-		return rpc.ApiResponseError(err)
-	} else {
-		return rpc.ApiResponseJson("OK")
-	}
-}
-
-func (s *apiServer) Shutdown(params martini.Params) (int, string) {
-	if err := s.verifyToken(params); err != nil {
-		return rpc.ApiResponseError(err)
-	}
-	if err := s.proxy.Shutdown(); err != nil {
 		return rpc.ApiResponseError(err)
 	} else {
 		return rpc.ApiResponseJson("OK")
@@ -166,17 +166,17 @@ func (c *ApiClient) GetStats(token string) (*Stats, error) {
 	return stats, nil
 }
 
-func (c *ApiClient) Start(token string) error {
-	url := c.encodeURL("/api/%s/start", token)
+func (c *ApiClient) Online(token string) error {
+	url := c.encodeURL("/api/%s/online", token)
+	return rpc.ApiPutJson(url, nil, nil)
+}
+
+func (c *ApiClient) Shutdown(token string) error {
+	url := c.encodeURL("/api/%s/shutdown", token)
 	return rpc.ApiPutJson(url, nil, nil)
 }
 
 func (c *ApiClient) FillSlot(token string, slots ...*models.SlotInfo) error {
 	url := c.encodeURL("/api/%s/fillslot", token)
 	return rpc.ApiPutJson(url, slots, nil)
-}
-
-func (c *ApiClient) Shutdown(token string) error {
-	url := c.encodeURL("/api/%s/shutdown", token)
-	return rpc.ApiPutJson(url, nil, nil)
 }

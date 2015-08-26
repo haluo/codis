@@ -110,7 +110,7 @@ func (s *Proxy) Start() error {
 	return nil
 }
 
-func (s *Proxy) Shutdown() error {
+func (s *Proxy) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.exit.Do(func() {

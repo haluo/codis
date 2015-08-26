@@ -101,7 +101,7 @@ func TestFillSlot(x *testing.T) {
 	verifySlots(c, expect)
 }
 
-func TestStartAndShutdown(x *testing.T) {
+func TestOnlineAndShutdown(x *testing.T) {
 	l, addr := openProxy()
 	defer l.Close()
 
@@ -121,12 +121,12 @@ func TestStartAndShutdown(x *testing.T) {
 	}
 	verifySlots(c, expect)
 
-	err1 := c.Start(token)
+	err1 := c.Online(token)
 	assert.MustNoError(err1)
 
 	err2 := c.Shutdown(token)
 	assert.MustNoError(err2)
 
-	err3 := c.Start(token)
+	err3 := c.Online(token)
 	assert.Must(err3 != nil)
 }
