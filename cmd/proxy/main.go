@@ -116,5 +116,5 @@ Options:
 
 	p.ServeHTTP(httpln)
 
-	log.Panic("proxy shutdown!!")
+	log.Infof("proxy %s shutdown!!", p.GetToken())
 }
