@@ -4,13 +4,12 @@
 package main
 
 import (
+	"fmt"
 	"net"
 	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
-
-	_ "net/http/pprof"
 
 	"github.com/docopt/docopt-go"
 
@@ -59,7 +58,7 @@ Options:
 		}
 	}
 
-	log.Println(banner)
+	fmt.Println(banner)
 
 	ncpu := runtime.NumCPU()
 	if s, ok := d["--ncpu"].(string); ok && s != "" {
@@ -70,7 +69,7 @@ Options:
 		ncpu = n
 	}
 	runtime.GOMAXPROCS(ncpu)
-	log.Printf("set ncpu = %d", ncpu)
+	log.Infof("set ncpu = %d", ncpu)
 
 	if s, ok := d["--loglevel"].(string); ok && s != "" {
 		var level = strings.ToUpper(s)
@@ -94,7 +93,7 @@ Options:
 			log.PanicErrorf(err, "load config failed, file = '%s'", s)
 		}
 	}
-	log.Printf("set config = \n%s", config.JsonString())
+	log.Infof("load config file\n%s", config.JsonString())
 
 	mainln, err := net.Listen(config.BindType, config.BindAddr)
 	if err != nil {

@@ -29,8 +29,8 @@ type Info struct {
 
 	Token string `json:"token"`
 
-	Slots []*models.SlotInfo `json:"slots"`
 	Stats Stats              `json:"stats"`
+	Slots []*models.SlotInfo `json:"slots"`
 }
 
 type Stats struct {
