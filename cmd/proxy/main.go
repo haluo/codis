@@ -4,45 +4,21 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
-	"net/http"
-	_ "net/http/pprof"
-	"os"
+	"net"
 	"os/exec"
-	"os/signal"
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
+
+	_ "net/http/pprof"
 
 	"github.com/docopt/docopt-go"
-	"github.com/ngaut/gostats"
 
 	"github.com/wandoulabs/codis/pkg/proxy"
-	"github.com/wandoulabs/codis/pkg/proxy/router"
-	"github.com/wandoulabs/codis/pkg/utils"
 	"github.com/wandoulabs/codis/pkg/utils/log"
 )
 
-var (
-	cpus       = 2
-	addr       = ":9000"
-	httpAddr   = ":9001"
-	configFile = "config.ini"
-)
-
-var usage = `usage: proxy [-c <config_file>] [-L <log_file>] [--cpu=<cpu_num>] [--addr=<proxy_listen_addr>] [--http-addr=<debug_http_server_addr>]
-
-options:
-   -c	set config file
-   -L	set output log file, default is stdout
-   --cpu=<cpu_num>		num of cpu cores that proxy can use
-   --addr=<proxy_listen_addr>		proxy listen address, example: 0.0.0.0:9000
-   --http-addr=<debug_http_server_addr>		debug vars http server
-`
-
-const banner string = `
+const banner = `
   _____  ____    ____/ /  (_)  _____
  / ___/ / __ \  / __  /  / /  / ___/
 / /__  / /_/ / / /_/ /  / /  (__  )
@@ -50,145 +26,96 @@ const banner string = `
 
 `
 
-func init() {
-	log.SetLevel(log.LEVEL_INFO)
-}
-
-func setLogLevel(level string) {
-	level = strings.ToLower(level)
-	var l = log.LEVEL_INFO
-	switch level {
-	case "error":
-		l = log.LEVEL_ERROR
-	case "warn", "warning":
-		l = log.LEVEL_WARN
-	case "debug":
-		l = log.LEVEL_DEBUG
-	case "info":
-		fallthrough
-	default:
-		level = "info"
-		l = log.LEVEL_INFO
-	}
-	log.SetLevel(l)
-	log.Infof("set log level to <%s>", level)
-}
-
-func setCrashLog(file string) {
-	f, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		log.InfoErrorf(err, "cannot open crash log file: %s", file)
-	} else {
-		syscall.Dup2(int(f.Fd()), 2)
-	}
-}
-
-func handleSetLogLevel(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	setLogLevel(r.Form.Get("level"))
-}
-
-func checkUlimit(min int) {
-	ulimitN, err := exec.Command("/bin/sh", "-c", "ulimit -n").Output()
-	if err != nil {
-		log.WarnErrorf(err, "get ulimit failed")
-	}
-
-	n, err := strconv.Atoi(strings.TrimSpace(string(ulimitN)))
-	if err != nil || n < min {
-		log.Panicf("ulimit too small: %d, should be at least %d", n, min)
-	}
-}
-
 func main() {
-	fmt.Print(banner)
+	const usage = `
+Usage:
+	codis-proxy [--ncpu=N] [--config=CONF] [--log=LOG] [--loglevel=LEVEL]
 
-	args, err := docopt.Parse(usage, nil, true, "codis proxy v0.1", true)
+Options:
+	--ncpu=N                    Set runtime.GOMAXPROCS to N, default is runtime.NumCPU().
+	-c CONF, --config=CONF      Set the config file.
+	-l FILE, --log=FILE         Set the daliy rotated log file.
+	--loglevel=LEVEL            Set loglevel, can be INFO,WARN,DEBUG,ERROR, default is INFO.
+`
+
+	d, err := docopt.Parse(usage, nil, true, "codis proxy v2.1+", true)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		log.PanicError(err, "parse arguments failed")
 	}
 
-	// set config file
-	if args["-c"] != nil {
-		configFile = args["-c"].(string)
+	const ulimitn = 1024
+	if b, err := exec.Command("/bin/sh", "-c", "ulimit -n").Output(); err != nil {
+		log.PanicErrorf(err, "get ulimit -n failed")
+	} else if n, err := strconv.Atoi(strings.TrimSpace(string(b))); err != nil || n < ulimitn {
+		log.PanicErrorf(err, "ulimit too small: %d, should be at least %d", n, ulimitn)
 	}
 
-	// set output log file
-	if s, ok := args["-L"].(string); ok && s != "" {
-		f, err := log.NewRollingFile(s, log.DailyRolling)
+	if s, ok := d["--log"].(string); ok && s != "" {
+		w, err := log.NewRollingFile(s, log.DailyRolling)
 		if err != nil {
-			log.PanicErrorf(err, "open rolling log file failed: %s", s)
+			log.PanicErrorf(err, "open log file %s failed", s)
 		} else {
-			defer f.Close()
-			log.StdLog = log.New(f, "")
+			log.StdLog = log.New(w, "")
 		}
 	}
-	log.SetLevel(log.LEVEL_INFO)
-	log.SetFlags(log.Flags() | log.Lshortfile)
 
-	// set log level
-	if s, ok := args["--log-level"].(string); ok && s != "" {
-		setLogLevel(s)
-	}
-	cpus = runtime.NumCPU()
-	// set cpu
-	if args["--cpu"] != nil {
-		cpus, err = strconv.Atoi(args["--cpu"].(string))
+	log.Println(banner)
+
+	ncpu := runtime.NumCPU()
+	if s, ok := d["--ncpu"].(string); ok && s != "" {
+		n, err := strconv.Atoi(s)
 		if err != nil {
-			log.PanicErrorf(err, "parse cpu number failed")
+			log.PanicErrorf(err, "parse --ncpu failed, invalid ncpu = '%s'", s)
+		}
+		ncpu = n
+	}
+	runtime.GOMAXPROCS(ncpu)
+	log.Printf("set ncpu = %d", ncpu)
+
+	if s, ok := d["--loglevel"].(string); ok && s != "" {
+		var level = strings.ToUpper(s)
+		switch s {
+		case "ERROR":
+			log.SetLevel(log.LEVEL_ERROR)
+		case "DEBUG":
+			log.SetLevel(log.LEVEL_DEBUG)
+		case "WARN", "WARNING":
+			log.SetLevel(log.LEVEL_WARN)
+		case "INFO":
+			log.SetLevel(log.LEVEL_INFO)
+		default:
+			log.Panicf("parse --loglevel failed, invalid loglevel = '%s'", level)
 		}
 	}
 
-	// set addr
-	if args["--addr"] != nil {
-		addr = args["--addr"].(string)
+	config := proxy.NewDefaultConfig()
+	if s, ok := d["--config"].(string); ok && s != "" {
+		if err := config.LoadFromFile(s); err != nil {
+			log.PanicErrorf(err, "load config failed, file = '%s'", s)
+		}
 	}
+	log.Printf("set config = \n%s", config.JsonString())
 
-	// set http addr
-	if args["--http-addr"] != nil {
-		httpAddr = args["--http-addr"].(string)
-	}
-
-	checkUlimit(1024)
-	runtime.GOMAXPROCS(cpus)
-
-	http.HandleFunc("/setloglevel", handleSetLogLevel)
-	go func() {
-		err := http.ListenAndServe(httpAddr, nil)
-		log.PanicError(err, "http debug server quit")
-	}()
-	log.Info("running on ", addr)
-	conf, err := proxy.LoadConf(configFile)
+	mainln, err := net.Listen(config.BindType, config.BindAddr)
 	if err != nil {
-		log.PanicErrorf(err, "load config failed")
+		log.PanicErrorf(err, "listen '%s:%s' failed", config.BindType, config.BindAddr)
 	}
 
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM, os.Kill)
+	httpln, err := net.Listen("tcp", config.HttpAddr)
+	if err != nil {
+		log.PanicErrorf(err, "listen '%s' failed", config.HttpAddr)
+	}
 
-	s := proxy.New(addr, httpAddr, conf)
-	defer s.Close()
-
-	stats.PublishJSONFunc("router", func() string {
-		var m = make(map[string]interface{})
-		m["ops"] = router.OpCounts()
-		m["cmds"] = router.GetAllOpStats()
-		m["info"] = s.Info()
-		m["build"] = map[string]interface{}{
-			"version": utils.Version,
-			"compile": utils.Compile,
-		}
-		b, _ := json.Marshal(m)
-		return string(b)
-	})
+	p := proxy.NewWithConfig(config)
+	defer p.Close()
 
 	go func() {
-		<-c
-		log.Info("ctrl-c or SIGTERM found, bye bye...")
-		s.Close()
+		defer p.Close()
+		err := p.Serve(mainln)
+		log.ErrorErrorf(err, "proxy server exit")
 	}()
 
-	s.Join()
-	log.Infof("proxy exit!! :(")
+	p.ServeHTTP(httpln)
+
+	log.Panic("proxy shutdown!!")
 }
