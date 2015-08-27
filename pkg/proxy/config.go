@@ -14,9 +14,8 @@ type Config struct {
 	BindAddr string `toml:"bind_addr" json:"bind_addr"`
 	HttpAddr string `toml:"http_addr" json:"http_addr"`
 
-	ProductName   string `toml:"product_name" json:"product_name"`
-	ProductAuth   string `toml:"product_auth" json:"-"`
-	DashboardAddr string `toml:"dashboard_addr" json:"dashboard_addr"`
+	ProductName string `toml:"product_name" json:"product_name"`
+	ProductAuth string `toml:"product_auth" json:"-"`
 
 	BackendPingPeriod      int `toml:"backend_ping_period" json:"backend_ping_period"`
 	SessionMaxTimeout      int `toml:"session_max_timeout" json:"session_max_timeout"`
@@ -31,9 +30,8 @@ func NewDefaultConfig() *Config {
 		BindAddr: "0.0.0.0:19000",
 		HttpAddr: "0.0.0.0:17950",
 
-		ProductName:   "Demo2",
-		ProductAuth:   "",
-		DashboardAddr: "127.0.0.1:18950",
+		ProductName: "Demo2",
+		ProductAuth: "",
 
 		BackendPingPeriod:  5,
 		SessionMaxTimeout:  60 * 30,
