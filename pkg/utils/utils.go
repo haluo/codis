@@ -5,6 +5,8 @@ package utils
 
 import (
 	"net"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/wandoulabs/codis/pkg/utils/errors"
@@ -46,5 +48,14 @@ func ResolveGlobalAddr(network string, address string) (string, error) {
 			}
 		}
 		return "", errors.Errorf("no global unicast address is configured")
+	}
+}
+
+func ValidateProductName(product string) (string, error) {
+	name := strings.TrimSpace(product)
+	if regexp.MustCompile(`^\w[\w\.\-]*$`).MatchString(name) {
+		return name, nil
+	} else {
+		return "", errors.Errorf("invalid product name, invalid character or bad leading character")
 	}
 }

@@ -93,13 +93,14 @@ Options:
 			log.PanicErrorf(err, "load config failed, file = '%s'", s)
 		}
 	}
-	log.Infof("set config\n%s=====================================", config)
 
 	s, err := proxy.NewWithConfig(config)
 	if err != nil {
-		log.PanicErrorf(err, "create proxy failed")
+		log.PanicErrorf(err, "create proxy config file failed\n%s\n", config)
 	}
 	defer s.Close()
+
+	log.Infof("create proxy with config\n%s\n", config)
 
 	for {
 		time.Sleep(time.Second)

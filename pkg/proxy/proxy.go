@@ -86,6 +86,12 @@ func (s *Proxy) setup() error {
 	} else {
 		s.config.AdminAddr = addr
 	}
+
+	if name, err := utils.ValidateProductName(s.config.ProductName); err != nil {
+		return err
+	} else {
+		s.config.ProductName = name
+	}
 	return nil
 }
 
