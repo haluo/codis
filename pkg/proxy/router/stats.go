@@ -47,7 +47,6 @@ func (s *OpStats) MarshalJSON() ([]byte, error) {
 
 var cmdstats struct {
 	total atomic2.Int64
-
 	opmap map[string]*OpStats
 	rwlck sync.RWMutex
 }
@@ -94,4 +93,26 @@ func incrOpStats(opstr string, usecs int64) {
 	s.calls.Incr()
 	s.usecs.Add(usecs)
 	cmdstats.total.Incr()
+}
+
+var sessions struct {
+	total   atomic2.Int64
+	actived atomic2.Int64
+}
+
+func incrSessions() {
+	sessions.total.Incr()
+	sessions.actived.Incr()
+}
+
+func decrSessions() {
+	sessions.actived.Decr()
+}
+
+func SessionsTotal() int64 {
+	return sessions.total.Get()
+}
+
+func SessionsActived() int64 {
+	return sessions.actived.Get()
 }

@@ -30,7 +30,7 @@ type Info struct {
 
 	Token string `json:"token"`
 
-	Stats Stats              `json:"stats"`
+	Stats *Stats             `json:"stats,omitempty"`
 	Slots []*models.SlotInfo `json:"slots"`
 }
 
@@ -39,6 +39,11 @@ type Stats struct {
 		Total int64             `json:"total"`
 		Cmds  []*router.OpStats `json:"cmds,omitempty"`
 	} `json:"ops"`
+
+	Sessions struct {
+		Total   int64 `json:"total"`
+		Actived int64 `json:"actived"`
+	} `json:"sessions"`
 }
 
 type apiServer struct {
@@ -89,19 +94,24 @@ func (s *apiServer) Info() (int, string) {
 
 	info.Token = s.proxy.GetToken()
 	info.Slots = s.proxy.GetSlots()
-	info.Stats.Ops.Total = router.OpsTotal()
-	info.Stats.Ops.Cmds = router.GetAllOpStats()
+	info.Stats = s.GetStats()
 	return rpc.ApiResponseJson(info)
+}
+
+func (s *apiServer) GetStats() *Stats {
+	stats := &Stats{}
+	stats.Ops.Total = router.OpsTotal()
+	stats.Ops.Cmds = router.GetAllOpStats()
+	stats.Sessions.Total = router.SessionsTotal()
+	stats.Sessions.Actived = router.SessionsActived()
+	return stats
 }
 
 func (s *apiServer) Stats(params martini.Params) (int, string) {
 	if err := s.verifyToken(params); err != nil {
 		return rpc.ApiResponseError(err)
 	} else {
-		stats := &Stats{}
-		stats.Ops.Total = router.OpsTotal()
-		stats.Ops.Cmds = router.GetAllOpStats()
-		return rpc.ApiResponseJson(stats)
+		return rpc.ApiResponseJson(s.GetStats())
 	}
 }
 

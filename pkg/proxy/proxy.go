@@ -92,9 +92,6 @@ func (s *Proxy) setup() error {
 func (s *Proxy) GetSlots() []*models.SlotInfo {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed {
-		return nil
-	}
 	return s.router.GetSlots()
 }
 

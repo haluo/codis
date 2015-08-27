@@ -90,6 +90,8 @@ func (s *Session) Serve(d Dispatcher, maxPipeline int) {
 		}
 	}()
 
+	incrSessions()
+
 	tasks := make(chan *Request, maxPipeline)
 	go func() {
 		defer func() {
@@ -106,6 +108,8 @@ func (s *Session) Serve(d Dispatcher, maxPipeline int) {
 	if err := s.loopReader(tasks, d); err != nil {
 		errlist.PushBack(err)
 	}
+
+	decrSessions()
 }
 
 func (s *Session) loopReader(tasks chan<- *Request, d Dispatcher) error {
