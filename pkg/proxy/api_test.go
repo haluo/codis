@@ -10,21 +10,25 @@ import (
 	"github.com/wandoulabs/codis/pkg/utils/assert"
 )
 
-var s *proxy.Proxy
-
-func openProxy() (net.Listener, string) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+func openProxy() (*proxy.Proxy, string) {
+	l, err := net.Listen("tcp", "0.0.0.0:0")
 	assert.MustNoError(err)
 
-	s = proxy.New()
-	go s.ServeHTTP(l)
+	config := proxy.NewDefaultConfig()
+	config.ProxyAddr = "0.0.0.0:0"
+	config.AdminAddr = l.Addr().String()
 
-	return l, l.Addr().String()
+	l.Close()
+
+	s, err := proxy.NewWithConfig(config)
+	assert.MustNoError(err)
+
+	return s, s.GetConfig().AdminAddr
 }
 
 func TestInfo(x *testing.T) {
-	l, addr := openProxy()
-	defer l.Close()
+	s, addr := openProxy()
+	defer s.Close()
 
 	var c = proxy.NewApiClient(addr)
 
@@ -36,8 +40,8 @@ func TestInfo(x *testing.T) {
 }
 
 func TestStats(x *testing.T) {
-	l, addr := openProxy()
-	defer l.Close()
+	s, addr := openProxy()
+	defer s.Close()
 
 	var c = proxy.NewApiClient(addr)
 
@@ -66,10 +70,8 @@ func verifySlots(c *proxy.ApiClient, expect map[int]*models.SlotInfo) {
 }
 
 func TestFillSlot(x *testing.T) {
-	l, addr := openProxy()
-	defer l.Close()
-
-	token := s.GetToken()
+	s, addr := openProxy()
+	defer s.Close()
 
 	var c = proxy.NewApiClient(addr)
 
@@ -81,7 +83,7 @@ func TestFillSlot(x *testing.T) {
 			Locked:      i%2 == 0,
 			BackendAddr: "x.x.x.x:xxxx",
 		}
-		assert.MustNoError(c.FillSlot(token, slot))
+		assert.MustNoError(c.FillSlot(s.GetToken(), slot))
 		expect[i] = slot
 	}
 	verifySlots(c, expect)
@@ -97,15 +99,13 @@ func TestFillSlot(x *testing.T) {
 		slots = append(slots, slot)
 		expect[i] = slot
 	}
-	assert.MustNoError(c.FillSlot(token, slots...))
+	assert.MustNoError(c.FillSlot(s.GetToken(), slots...))
 	verifySlots(c, expect)
 }
 
 func TestOnlineAndShutdown(x *testing.T) {
-	l, addr := openProxy()
-	defer l.Close()
-
-	token := s.GetToken()
+	s, addr := openProxy()
+	defer s.Close()
 
 	var c = proxy.NewApiClient(addr)
 
@@ -116,17 +116,17 @@ func TestOnlineAndShutdown(x *testing.T) {
 			Id:          i,
 			BackendAddr: "x.x.x.x:xxxx",
 		}
-		assert.MustNoError(c.FillSlot(token, slot))
+		assert.MustNoError(c.FillSlot(s.GetToken(), slot))
 		expect[i] = slot
 	}
 	verifySlots(c, expect)
 
-	err1 := c.Online(token)
+	err1 := c.Online(s.GetToken())
 	assert.MustNoError(err1)
 
-	err2 := c.Shutdown(token)
+	err2 := c.Shutdown(s.GetToken())
 	assert.MustNoError(err2)
 
-	err3 := c.Online(token)
+	err3 := c.Online(s.GetToken())
 	assert.Must(err3 != nil)
 }

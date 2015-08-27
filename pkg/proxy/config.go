@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"bytes"
-	"encoding/json"
 
 	"github.com/BurntSushi/toml"
 
@@ -10,9 +9,9 @@ import (
 )
 
 type Config struct {
-	BindType string `toml:"bind_type" json:"bind_type"`
-	BindAddr string `toml:"bind_addr" json:"bind_addr"`
-	HttpAddr string `toml:"http_addr" json:"http_addr"`
+	ProtoType string `toml:"proto_type" json:"proto_type"`
+	ProxyAddr string `toml:"proxy_addr" json:"proxy_addr"`
+	AdminAddr string `toml:"admin_addr" json:"admin_addr"`
 
 	ProductName string `toml:"product_name" json:"product_name"`
 	ProductAuth string `toml:"product_auth" json:"-"`
@@ -26,9 +25,9 @@ type Config struct {
 
 func NewDefaultConfig() *Config {
 	return &Config{
-		BindType: "tcp",
-		BindAddr: "0.0.0.0:19000",
-		HttpAddr: "0.0.0.0:17950",
+		ProtoType: "tcp4",
+		ProxyAddr: "0.0.0.0:9000",
+		AdminAddr: "0.0.0.0:7953",
 
 		ProductName: "Demo2",
 		ProductAuth: "",
@@ -53,9 +52,4 @@ func (c *Config) String() string {
 	e.Indent = "    "
 	e.Encode(c)
 	return b.String()
-}
-
-func (c *Config) JsonString() string {
-	b, _ := json.MarshalIndent(c, "", "    ")
-	return string(b)
 }

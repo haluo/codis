@@ -22,10 +22,11 @@ type Info struct {
 	UnixTime int64  `json:"unixtime"`
 	BootTime string `json:"boottime"`
 
-	Pid      int     `json:"pid"`
-	Pwd      string  `json:"pwd"`
-	Hostname string  `json:"hostname"`
-	Config   *Config `json:"config"`
+	Pid    int     `json:"pid"`
+	Pwd    string  `json:"pwd"`
+	Config *Config `json:"config"`
+	Online bool    `json:"online"`
+	Closed bool    `json:"closed"`
 
 	Token string `json:"token"`
 
@@ -82,8 +83,9 @@ func (s *apiServer) Info() (int, string) {
 	}
 	info.Pid = os.Getpid()
 	info.Pwd, _ = os.Getwd()
-	info.Hostname, _ = os.Hostname()
 	info.Config = s.proxy.GetConfig()
+	info.Online = s.proxy.IsOnline()
+	info.Closed = s.proxy.IsClosed()
 
 	info.Token = s.proxy.GetToken()
 	info.Slots = s.proxy.GetSlots()

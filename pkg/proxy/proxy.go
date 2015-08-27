@@ -8,7 +8,9 @@ import (
 
 	"github.com/wandoulabs/codis/pkg/models"
 	"github.com/wandoulabs/codis/pkg/proxy/router"
+	"github.com/wandoulabs/codis/pkg/utils"
 	"github.com/wandoulabs/codis/pkg/utils/errors"
+	"github.com/wandoulabs/codis/pkg/utils/log"
 	"github.com/wandoulabs/codis/pkg/utils/rpc"
 )
 
@@ -18,10 +20,13 @@ type Proxy struct {
 	token string
 
 	init, exit struct {
-		c chan struct{}
-		sync.Once
+		C chan struct{}
 	}
+	online bool
 	closed bool
+
+	lproxy net.Listener
+	ladmin net.Listener
 
 	config *Config
 	router *router.Router
@@ -31,40 +36,57 @@ var (
 	errClosedProxy = errors.New("use of closed proxy")
 )
 
-func New() *Proxy {
+func New() (*Proxy, error) {
 	return NewWithConfig(NewDefaultConfig())
 }
 
-func NewWithConfig(config *Config) *Proxy {
+func NewWithConfig(config *Config) (*Proxy, error) {
 	s := &Proxy{
 		token:  rpc.NewToken(),
 		config: config,
 		router: router.NewWithAuth(config.ProductAuth),
 	}
-	s.init.c = make(chan struct{})
-	s.exit.c = make(chan struct{})
+	s.init.C = make(chan struct{})
+	s.exit.C = make(chan struct{})
 
-	go s.keepAlive()
+	if err := s.setup(); err != nil {
+		s.Close()
+		return nil, err
+	}
 
-	return s
+	log.Infof("[%p] create new proxy", s)
+
+	go s.serveAdmin()
+	go s.serveProxy()
+
+	return s, nil
 }
 
-func (s *Proxy) keepAlive() {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for tick := 0; ; {
-		select {
-		case <-s.exit.c:
-			return
-		case <-ticker.C:
-			if maxTick := s.config.BackendPingPeriod; maxTick != 0 {
-				if tick++; tick >= maxTick {
-					tick = 0
-					s.router.KeepAlive()
-				}
-			}
-		}
+func (s *Proxy) setup() error {
+	if l, err := net.Listen(s.config.ProtoType, s.config.ProxyAddr); err != nil {
+		return errors.Trace(err)
+	} else {
+		s.lproxy = l
 	}
+
+	if l, err := net.Listen("tcp", s.config.AdminAddr); err != nil {
+		return errors.Trace(err)
+	} else {
+		s.ladmin = l
+	}
+
+	if addr, err := utils.ResolveGlobalAddr(s.config.ProtoType, s.config.ProxyAddr); err != nil {
+		return err
+	} else {
+		s.config.ProxyAddr = addr
+	}
+
+	if addr, err := utils.ResolveGlobalAddr("tcp", s.config.AdminAddr); err != nil {
+		return err
+	} else {
+		s.config.AdminAddr = addr
+	}
+	return nil
 }
 
 func (s *Proxy) GetSlots() []*models.SlotInfo {
@@ -104,66 +126,90 @@ func (s *Proxy) Start() error {
 	if s.closed {
 		return errClosedProxy
 	}
-	s.init.Do(func() {
-		close(s.init.c)
-	})
+	if s.online {
+		return nil
+	}
+	s.online = true
+	close(s.init.C)
 	return nil
 }
 
 func (s *Proxy) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.exit.Do(func() {
-		s.router.Close()
-		s.closed = true
-		close(s.exit.c)
-	})
+	if s.closed {
+		return nil
+	}
+	s.closed = true
+	close(s.exit.C)
+
+	s.ladmin.Close()
+	s.lproxy.Close()
+	s.router.Close()
 	return nil
 }
 
-func (s *Proxy) ServeHTTP(l net.Listener) error {
-	defer l.Close()
+func (s *Proxy) IsOnline() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.online && !s.closed
+}
+
+func (s *Proxy) IsClosed() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.closed
+}
+
+func (s *Proxy) serveAdmin() {
+	if s.IsClosed() {
+		return
+	}
+	defer s.Close()
+
+	log.Infof("[%p] admin start service on %s", s, s.ladmin.Addr())
 
 	eh := make(chan error, 1)
 
-	go func() {
+	go func(l net.Listener) {
 		h := http.NewServeMux()
 		h.Handle("/", newApiServer(s))
 		hs := &http.Server{Handler: h}
 		eh <- hs.Serve(l)
-	}()
+	}(s.ladmin)
 
 	select {
-	case <-s.exit.c:
-		return errClosedProxy
+	case <-s.exit.C:
+		log.Infof("[%p] admin exit", s)
 	case err := <-eh:
-		return err
+		log.ErrorErrorf(err, "[%p] admin exit on error", s)
 	}
 }
 
-func (s *Proxy) Serve(l net.Listener) error {
-	defer l.Close()
+func (s *Proxy) serveProxy() {
+	if s.IsClosed() {
+		return
+	}
+	defer s.Close()
 
 	select {
-	case <-s.exit.c:
-		return errClosedProxy
-	case <-s.init.c:
+	case <-s.exit.C:
+		return
+	case <-s.init.C:
 	}
+
+	log.Infof("[%p] proxy start service on %s", s, s.lproxy.Addr())
 
 	ch := make(chan net.Conn, 4096)
 	go func() {
 		for c := range ch {
-			x := router.NewSessionSize(c, s.config.ProductAuth,
-				s.config.SessionMaxBufSize, s.config.SessionMaxTimeout)
-
-			x.SetKeepAlivePeriod(s.config.SessionKeepAlivePeriod)
-
-			go x.Serve(s.router, s.config.SessionMaxPipeline)
+			s.newSession(c)
 		}
 	}()
 
 	eh := make(chan error, 1)
-	go func() {
+
+	go func(l net.Listener) {
 		defer close(ch)
 		for {
 			c, err := l.Accept()
@@ -174,12 +220,39 @@ func (s *Proxy) Serve(l net.Listener) error {
 				ch <- c
 			}
 		}
-	}()
+	}(s.lproxy)
+
+	go s.keepAlive()
 
 	select {
-	case <-s.exit.c:
-		return errClosedProxy
+	case <-s.exit.C:
+		log.Infof("[%p] proxy exit", s)
 	case err := <-eh:
-		return err
+		log.ErrorErrorf(err, "[%p] proxy exit on error", s)
 	}
+}
+
+func (s *Proxy) keepAlive() {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for tick := 0; ; {
+		select {
+		case <-s.exit.C:
+			return
+		case <-ticker.C:
+			if maxTick := s.config.BackendPingPeriod; maxTick != 0 {
+				if tick++; tick >= maxTick {
+					tick = 0
+					s.router.KeepAlive()
+				}
+			}
+		}
+	}
+}
+
+func (s *Proxy) newSession(c net.Conn) {
+	x := router.NewSessionSize(c, s.config.ProductAuth,
+		s.config.SessionMaxBufSize, s.config.SessionMaxTimeout)
+	x.SetKeepAlivePeriod(s.config.SessionKeepAlivePeriod)
+	go x.Serve(s.router, s.config.SessionMaxPipeline)
 }

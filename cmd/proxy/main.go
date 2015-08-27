@@ -5,11 +5,11 @@ package main
 
 import (
 	"fmt"
-	"net"
 	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/docopt/docopt-go"
 
@@ -93,28 +93,24 @@ Options:
 			log.PanicErrorf(err, "load config failed, file = '%s'", s)
 		}
 	}
-	log.Infof("load config file\n%s", config.JsonString())
+	log.Infof("set config\n%s=====================================", config)
 
-	mainln, err := net.Listen(config.BindType, config.BindAddr)
+	s, err := proxy.NewWithConfig(config)
 	if err != nil {
-		log.PanicErrorf(err, "listen '%s:%s' failed", config.BindType, config.BindAddr)
+		log.PanicErrorf(err, "create proxy failed")
 	}
+	defer s.Close()
 
-	httpln, err := net.Listen("tcp", config.HttpAddr)
-	if err != nil {
-		log.PanicErrorf(err, "listen '%s' failed", config.HttpAddr)
+	for {
+		time.Sleep(time.Second)
+		if s.IsOnline() {
+			continue
+		}
+		if s.IsClosed() {
+			log.Infof("[%p] proxy exiting ...", s)
+			return
+		} else {
+			log.Infof("[%p] proxy waiting online ...", s)
+		}
 	}
-
-	p := proxy.NewWithConfig(config)
-	defer p.Close()
-
-	go func() {
-		defer p.Close()
-		err := p.Serve(mainln)
-		log.ErrorErrorf(err, "proxy server exit")
-	}()
-
-	p.ServeHTTP(httpln)
-
-	log.Infof("proxy %s shutdown!!", p.GetToken())
 }
