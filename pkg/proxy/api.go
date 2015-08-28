@@ -3,6 +3,7 @@ package proxy
 import (
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-martini/martini"
@@ -12,6 +13,7 @@ import (
 	"github.com/wandoulabs/codis/pkg/proxy/router"
 	"github.com/wandoulabs/codis/pkg/utils"
 	"github.com/wandoulabs/codis/pkg/utils/errors"
+	"github.com/wandoulabs/codis/pkg/utils/log"
 	"github.com/wandoulabs/codis/pkg/utils/rpc"
 )
 
@@ -31,7 +33,7 @@ type Info struct {
 	Token string `json:"token"`
 
 	Stats *Stats             `json:"stats,omitempty"`
-	Slots []*models.SlotInfo `json:"slots"`
+	Slots []*models.SlotInfo `json:"slots,omitempty"`
 }
 
 type Stats struct {
@@ -53,6 +55,20 @@ type apiServer struct {
 func newApiServer(p *Proxy) http.Handler {
 	m := martini.New()
 	m.Use(martini.Recovery())
+	m.Use(func(w http.ResponseWriter, req *http.Request, c martini.Context) {
+		addr := req.Header.Get("X-Real-IP")
+		if addr == "" {
+			addr = req.Header.Get("X-Forwarded-For")
+			if addr == "" {
+				addr = req.RemoteAddr
+			}
+		}
+		path := req.URL.Path
+		if strings.HasPrefix(path, "/api") {
+			log.Infof("[%p] API from %s call %s", p, addr, path)
+		}
+		c.Next()
+	})
 
 	api := &apiServer{p}
 
