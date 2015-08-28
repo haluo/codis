@@ -115,7 +115,7 @@ func apiRequestJson(method string, url string, args, reply interface{}) error {
 		} else {
 			return nil
 		}
-	case 500:
+	case 1500:
 		e, err := responseBodyAsError(rsp)
 		if err != nil {
 			return err
@@ -137,7 +137,7 @@ func ApiPutJson(url string, args, reply interface{}) error {
 
 func ApiResponseError(err error) (int, string) {
 	if err == nil {
-		return 500, ""
+		return 1500, ""
 	}
 	e := &rpcError{
 		Cause: err.Error(),
@@ -145,9 +145,9 @@ func ApiResponseError(err error) (int, string) {
 	}
 	b, err := json.MarshalIndent(e, "", "    ")
 	if err != nil {
-		return 500, ""
+		return 1500, ""
 	} else {
-		return 500, string(b)
+		return 1500, string(b)
 	}
 }
 
