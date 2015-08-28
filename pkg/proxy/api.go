@@ -74,10 +74,10 @@ func newApiServer(p *Proxy) http.Handler {
 
 	r := martini.NewRouter()
 	r.Get("/", api.Info)
-	r.Get("/api/stats/:token", api.Stats)
-	r.Put("/api/online/:token", api.Online)
-	r.Put("/api/shutdown/:token", api.Shutdown)
-	r.Put("/api/fillslot/:token", binding.Json([]*models.SlotInfo{}), api.FillSlot)
+	r.Get("/api/stats/:token/:xauth", api.Stats)
+	r.Put("/api/online/:token/:xauth", api.Online)
+	r.Put("/api/shutdown/:token/:xauth", api.Shutdown)
+	r.Put("/api/fillslot/:token/:xauth", binding.Json([]*models.SlotInfo{}), api.FillSlot)
 
 	m.MapTo(r, (*martini.Routes)(nil))
 	m.Action(r.Handle)
@@ -91,6 +91,13 @@ func (s *apiServer) verifyToken(params martini.Params) error {
 	}
 	if token != s.proxy.GetToken() {
 		return errors.New("Unmatched Token")
+	}
+	xauth := params["xauth"]
+	if xauth == "" {
+		return errors.New("Missing XAuth")
+	}
+	if xauth != s.proxy.GetXAuth() {
+		return errors.New("Unmatched XAuth")
 	}
 	return nil
 }
@@ -165,15 +172,22 @@ func (s *apiServer) FillSlot(slots []*models.SlotInfo, params martini.Params) (i
 }
 
 type ApiClient struct {
-	Host string
+	host  string
+	token string
+	xauth string
 }
 
 func NewApiClient(host string) *ApiClient {
-	return &ApiClient{host}
+	return &ApiClient{host: host}
+}
+
+func (c *ApiClient) SetToken(token string, auth string) {
+	c.token = token
+	c.xauth = rpc.EncryptAuth(auth, token)
 }
 
 func (c *ApiClient) encodeURL(format string, args ...interface{}) string {
-	return rpc.EncodeURL(c.Host, format, args...)
+	return rpc.EncodeURL(c.host, format, args...)
 }
 
 func (c *ApiClient) GetInfo() (*Info, error) {
@@ -185,8 +199,8 @@ func (c *ApiClient) GetInfo() (*Info, error) {
 	return info, nil
 }
 
-func (c *ApiClient) GetStats(token string) (*Stats, error) {
-	url := c.encodeURL("/api/stats/%s", token)
+func (c *ApiClient) GetStats() (*Stats, error) {
+	url := c.encodeURL("/api/stats/%s/%s", c.token, c.xauth)
 	stats := &Stats{}
 	if err := rpc.ApiGetJson(url, stats); err != nil {
 		return nil, err
@@ -194,17 +208,17 @@ func (c *ApiClient) GetStats(token string) (*Stats, error) {
 	return stats, nil
 }
 
-func (c *ApiClient) Online(token string) error {
-	url := c.encodeURL("/api/online/%s", token)
+func (c *ApiClient) Online() error {
+	url := c.encodeURL("/api/online/%s/%s", c.token, c.xauth)
 	return rpc.ApiPutJson(url, nil, nil)
 }
 
-func (c *ApiClient) Shutdown(token string) error {
-	url := c.encodeURL("/api/shutdown/%s", token)
+func (c *ApiClient) Shutdown() error {
+	url := c.encodeURL("/api/shutdown/%s/%s", c.token, c.xauth)
 	return rpc.ApiPutJson(url, nil, nil)
 }
 
-func (c *ApiClient) FillSlot(token string, slots ...*models.SlotInfo) error {
-	url := c.encodeURL("/api/fillslot/%s", token)
+func (c *ApiClient) FillSlot(slots ...*models.SlotInfo) error {
+	url := c.encodeURL("/api/fillslot/%s/%s", c.token, c.xauth)
 	return rpc.ApiPutJson(url, slots, nil)
 }

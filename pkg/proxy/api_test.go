@@ -45,10 +45,12 @@ func TestStats(x *testing.T) {
 
 	var c = proxy.NewApiClient(addr)
 
-	_, err1 := c.GetStats("Bad Token.")
+	c.SetToken("", "")
+	_, err1 := c.GetStats()
 	assert.Must(err1 != nil)
 
-	_, err2 := c.GetStats(s.GetToken())
+	c.SetToken(s.GetToken(), "")
+	_, err2 := c.GetStats()
 	assert.MustNoError(err2)
 }
 
@@ -74,6 +76,7 @@ func TestFillSlot(x *testing.T) {
 	defer s.Close()
 
 	var c = proxy.NewApiClient(addr)
+	c.SetToken(s.GetToken(), "")
 
 	expect := make(map[int]*models.SlotInfo)
 
@@ -83,7 +86,7 @@ func TestFillSlot(x *testing.T) {
 			Locked:      i%2 == 0,
 			BackendAddr: "x.x.x.x:xxxx",
 		}
-		assert.MustNoError(c.FillSlot(s.GetToken(), slot))
+		assert.MustNoError(c.FillSlot(slot))
 		expect[i] = slot
 	}
 	verifySlots(c, expect)
@@ -99,7 +102,7 @@ func TestFillSlot(x *testing.T) {
 		slots = append(slots, slot)
 		expect[i] = slot
 	}
-	assert.MustNoError(c.FillSlot(s.GetToken(), slots...))
+	assert.MustNoError(c.FillSlot(slots...))
 	verifySlots(c, expect)
 }
 
@@ -108,6 +111,7 @@ func TestOnlineAndShutdown(x *testing.T) {
 	defer s.Close()
 
 	var c = proxy.NewApiClient(addr)
+	c.SetToken(s.GetToken(), "")
 
 	expect := make(map[int]*models.SlotInfo)
 
@@ -116,17 +120,17 @@ func TestOnlineAndShutdown(x *testing.T) {
 			Id:          i,
 			BackendAddr: "x.x.x.x:xxxx",
 		}
-		assert.MustNoError(c.FillSlot(s.GetToken(), slot))
+		assert.MustNoError(c.FillSlot(slot))
 		expect[i] = slot
 	}
 	verifySlots(c, expect)
 
-	err1 := c.Online(s.GetToken())
+	err1 := c.Online()
 	assert.MustNoError(err1)
 
-	err2 := c.Shutdown(s.GetToken())
+	err2 := c.Shutdown()
 	assert.MustNoError(err2)
 
-	err3 := c.Online(s.GetToken())
+	err3 := c.Online()
 	assert.Must(err3 != nil)
 }

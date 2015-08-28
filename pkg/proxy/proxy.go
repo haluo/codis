@@ -18,6 +18,7 @@ type Proxy struct {
 	mu sync.Mutex
 
 	token string
+	xauth string
 
 	init, exit struct {
 		C chan struct{}
@@ -41,11 +42,11 @@ func New() (*Proxy, error) {
 }
 
 func NewWithConfig(config *Config) (*Proxy, error) {
-	s := &Proxy{
-		token:  rpc.NewToken(),
-		config: config,
-		router: router.NewWithAuth(config.ProductAuth),
-	}
+	s := &Proxy{config: config}
+	s.token = rpc.NewToken()
+	s.xauth = rpc.EncryptAuth(config.ProductAuth, s.token)
+
+	s.router = router.NewWithAuth(config.ProductAuth)
 	s.init.C = make(chan struct{})
 	s.exit.C = make(chan struct{})
 
@@ -103,6 +104,10 @@ func (s *Proxy) GetSlots() []*models.SlotInfo {
 
 func (s *Proxy) GetToken() string {
 	return s.token
+}
+
+func (s *Proxy) GetXAuth() string {
+	return s.xauth
 }
 
 func (s *Proxy) GetConfig() *Config {

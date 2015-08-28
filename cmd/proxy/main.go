@@ -21,8 +21,8 @@ func main() {
 	const usage = `
 Usage:
 	codis-proxy [--ncpu=N] [--config=CONF] [--log=LOG] [--loglevel=LEVEL] [--ulimit=NLIMIT]
-	codis-proxy kill --admin=ADDR [--force]
-	codis-proxy dump --admin=ADDR
+	codis-proxy kill --admin=ADDR [--auth=AUTH]
+	codis-proxy info --admin=ADDR
 
 Options:
 	--ncpu=N                    Set runtime.GOMAXPROCS to N, default is runtime.NumCPU().
@@ -38,12 +38,12 @@ Options:
 	}
 
 	switch {
-	default:
-		new(cmdMain).main(d)
+	case d["info"].(bool):
+		new(cmdInfo).main(d)
 	case d["kill"].(bool):
 		new(cmdKill).main(d)
-	case d["dump"].(bool):
-		new(cmdDump).main(d)
+	default:
+		new(cmdMain).main(d)
 	}
 }
 

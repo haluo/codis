@@ -8,10 +8,10 @@ import (
 	"github.com/wandoulabs/codis/pkg/utils/log"
 )
 
-type cmdDump struct {
+type cmdInfo struct {
 }
 
-func (c *cmdDump) main(d map[string]interface{}) {
+func (c *cmdInfo) main(d map[string]interface{}) {
 	host := d["--admin"].(string)
 
 	client := proxy.NewApiClient(host)
