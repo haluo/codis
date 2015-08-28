@@ -17,6 +17,36 @@ import (
 	"github.com/wandoulabs/codis/pkg/utils/log"
 )
 
+func main() {
+	const usage = `
+Usage:
+	codis-proxy [--ncpu=N] [--config=CONF] [--log=LOG] [--loglevel=LEVEL] [--ulimit=NLIMIT]
+	codis-proxy kill --admin=ADDR [--force]
+	codis-proxy dump --admin=ADDR
+
+Options:
+	--ncpu=N                    Set runtime.GOMAXPROCS to N, default is runtime.NumCPU().
+	-c CONF, --config=CONF      Set the config file.
+	-l FILE, --log=FILE         Set the daliy rotated log file.
+	--loglevel=LEVEL            Set loglevel, can be INFO,WARN,DEBUG,ERROR, default is INFO.
+	--ulimit=NLIMIT             Run 'ulimit -n' to check the maximum number of open file descriptors.
+`
+
+	d, err := docopt.Parse(usage, nil, true, "", false)
+	if err != nil {
+		log.PanicError(err, "parse arguments failed")
+	}
+
+	switch {
+	default:
+		new(cmdMain).main(d)
+	case d["kill"].(bool):
+		new(cmdKill).main(d)
+	case d["dump"].(bool):
+		new(cmdDump).main(d)
+	}
+}
+
 const banner = `
   _____  ____    ____/ /  (_)  _____
  / ___/ / __ \  / __  /  / /  / ___/
@@ -25,28 +55,22 @@ const banner = `
 
 `
 
-func main() {
-	const usage = `
-Usage:
-	codis-proxy [--ncpu=N] [--config=CONF] [--log=LOG] [--loglevel=LEVEL]
+type cmdMain struct {
+}
 
-Options:
-	--ncpu=N                    Set runtime.GOMAXPROCS to N, default is runtime.NumCPU().
-	-c CONF, --config=CONF      Set the config file.
-	-l FILE, --log=FILE         Set the daliy rotated log file.
-	--loglevel=LEVEL            Set loglevel, can be INFO,WARN,DEBUG,ERROR, default is INFO.
-`
-
-	d, err := docopt.Parse(usage, nil, true, "codis proxy v2.1+", true)
-	if err != nil {
-		log.PanicError(err, "parse arguments failed")
-	}
-
-	const ulimitn = 1024
-	if b, err := exec.Command("/bin/sh", "-c", "ulimit -n").Output(); err != nil {
-		log.PanicErrorf(err, "get ulimit -n failed")
-	} else if n, err := strconv.Atoi(strings.TrimSpace(string(b))); err != nil || n < ulimitn {
-		log.PanicErrorf(err, "ulimit too small: %d, should be at least %d", n, ulimitn)
+func (c *cmdMain) main(d map[string]interface{}) {
+	if s, ok := d["--ulimit"].(string); ok && s != "" {
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			log.PanicErrorf(err, "parse argument of ulimit failed")
+		}
+		b, err := exec.Command("/bin/sh", "-c", "ulimit -n").Output()
+		if err != nil {
+			log.PanicErrorf(err, "run ulimit -n failed")
+		}
+		if v, err := strconv.Atoi(strings.TrimSpace(string(b))); err != nil || v < n {
+			log.PanicErrorf(err, "ulimit too small: %d, should be at least %d", v, n)
+		}
 	}
 
 	if s, ok := d["--log"].(string); ok && s != "" {
