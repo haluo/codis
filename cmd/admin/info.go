@@ -12,16 +12,17 @@ type cmdInfo struct {
 }
 
 func (c *cmdInfo) main(d map[string]interface{}) {
-	host := d["--admin"].(string)
+	host := d["--proxy"].(string)
 
 	client := proxy.NewApiClient(host)
 	info, err := client.GetInfo()
 	if err != nil {
 		log.PanicErrorf(err, "invalid proxy %s", host)
 	}
+
 	b, err := json.MarshalIndent(info, "", "    ")
 	if err != nil {
-		log.PanicErrorf(err, "json encode error")
+		log.PanicErrorf(err, "json encode failed")
 	}
 	fmt.Println(string(b))
 }

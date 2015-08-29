@@ -1,9 +1,12 @@
 all: build
 
-build: build-version build-proxy build-server
+build: build-version build-admin build-proxy build-server
 
 build-version:
 	@bash genver.sh
+
+build-admin:
+	go build -o bin/codis-admin ./cmd/admin
 
 build-proxy:
 	go build -o bin/codis-proxy ./cmd/proxy

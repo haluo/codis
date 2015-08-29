@@ -17,36 +17,6 @@ import (
 	"github.com/wandoulabs/codis/pkg/utils/log"
 )
 
-func main() {
-	const usage = `
-Usage:
-	codis-proxy [--ncpu=N] [--config=CONF] [--log=LOG] [--loglevel=LEVEL] [--ulimit=NLIMIT]
-	codis-proxy kill --admin=ADDR [--auth=AUTH]
-	codis-proxy info --admin=ADDR
-
-Options:
-	--ncpu=N                    Set runtime.GOMAXPROCS to N, default is runtime.NumCPU().
-	-c CONF, --config=CONF      Set the config file.
-	-l FILE, --log=FILE         Set the daliy rotated log file.
-	--loglevel=LEVEL            Set loglevel, can be INFO,WARN,DEBUG,ERROR, default is INFO.
-	--ulimit=NLIMIT             Run 'ulimit -n' to check the maximum number of open file descriptors.
-`
-
-	d, err := docopt.Parse(usage, nil, true, "", false)
-	if err != nil {
-		log.PanicError(err, "parse arguments failed")
-	}
-
-	switch {
-	case d["info"].(bool):
-		new(cmdInfo).main(d)
-	case d["kill"].(bool):
-		new(cmdKill).main(d)
-	default:
-		new(cmdMain).main(d)
-	}
-}
-
 const banner = `
   _____  ____    ____/ /  (_)  _____
  / ___/ / __ \  / __  /  / /  / ___/
@@ -55,10 +25,24 @@ const banner = `
 
 `
 
-type cmdMain struct {
-}
+func main() {
+	const usage = `
+Usage:
+	codis-proxy [--ncpu=N] [--config=CONF] [--log=LOG] [--loglevel=LEVEL] [--ulimit=NLIMIT]
 
-func (c *cmdMain) main(d map[string]interface{}) {
+Options:
+	--ncpu=N                    set runtime.GOMAXPROCS to N, default is runtime.NumCPU().
+	-c CONF, --config=CONF      specify the config file.
+	-l FILE, --log=FILE         specify the daliy rotated log file.
+	--loglevel=LEVEL            specify the loglevel, can be INFO,WARN,DEBUG,ERROR, default is INFO.
+	--ulimit=NLIMIT             run 'ulimit -n' to check the maximum number of open file descriptors.
+`
+
+	d, err := docopt.Parse(usage, nil, true, "", false)
+	if err != nil {
+		log.PanicError(err, "parse arguments failed")
+	}
+
 	if s, ok := d["--ulimit"].(string); ok && s != "" {
 		n, err := strconv.Atoi(s)
 		if err != nil {
@@ -133,6 +117,7 @@ func (c *cmdMain) main(d map[string]interface{}) {
 		}
 		if s.IsClosed() {
 			log.Infof("[%p] proxy exiting ...", s)
+			time.Sleep(time.Second)
 			return
 		} else {
 			log.Infof("[%p] proxy waiting online ...", s)
