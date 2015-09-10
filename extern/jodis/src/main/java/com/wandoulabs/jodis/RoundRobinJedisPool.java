@@ -29,6 +29,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.wandoulabs.jodis.auto.AutoJedis;
+import com.wandoulabs.jodis.auto.AutoJedisImpl;
+import com.wandoulabs.jodis.auto.AutoJedisProxy;
+import com.wandoulabs.jodis.auto.log.LogHandler;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.framework.imps.CuratorFrameworkState;
@@ -288,6 +292,31 @@ public class RoundRobinJedisPool implements JedisResourcePool {
                 return pools.get(next).pool.getResource();
             }
         }
+    }
+
+    @Override
+    public AutoJedis getAutoResource() {
+        ImmutableList<PooledObject> pools = this.pools;
+        if (pools.isEmpty()) {
+            throw new JedisException("Proxy list empty");
+        }
+        for (;;) {
+            int current = nextIdx.get();
+            int next = current >= pools.size() - 1 ? 0 : current + 1;
+            if (nextIdx.compareAndSet(current, next)) {
+                Jedis jedis = pools.get(next).pool.getResource();
+                AutoJedisImpl aimp = new AutoJedisImpl(jedis);
+                AutoJedisProxy proxy = new AutoJedisProxy();
+                return (AutoJedis)proxy.bind(aimp);
+            }
+        }
+    }
+
+    @Override
+    public void registerUser(String appName, String host, String port) {
+        LogHandler.setAppName(appName);
+        LogHandler.setHost(host);
+        LogHandler.setPort(port);
     }
 
     @Override

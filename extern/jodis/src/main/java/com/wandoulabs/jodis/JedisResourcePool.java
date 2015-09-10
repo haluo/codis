@@ -26,6 +26,7 @@ package com.wandoulabs.jodis;
 
 import java.io.Closeable;
 
+import com.wandoulabs.jodis.auto.AutoJedis;
 import redis.clients.jedis.Jedis;
 
 /**
@@ -42,4 +43,13 @@ public interface JedisResourcePool extends Closeable {
      * returned directly.
      */
     Jedis getResource();
+
+    /**
+     * AutoHome
+     * @return
+     */
+    AutoJedis getAutoResource();
+
+
+    void registerUser(String appName,String host,String port);
 }
