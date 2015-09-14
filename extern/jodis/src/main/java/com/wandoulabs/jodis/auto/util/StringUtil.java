@@ -29,4 +29,15 @@ public class StringUtil {
         return !isEmpty(str);
     }
 
+
+    public static String substringBeforeLast(String str, String separator) {
+        if (isEmpty(str) || isEmpty(separator)) {
+            return str;
+        }
+        int pos = str.lastIndexOf(separator);
+        if (pos == -1) {
+            return str;
+        }
+        return str.substring(0, pos);
+    }
 }

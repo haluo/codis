@@ -1,7 +1,7 @@
 package com.wandoulabs.jodis.auto;
 
 import com.wandoulabs.jodis.auto.log.LogHandler;
-import com.wandoulabs.jodis.auto.util.SizeOfObject;
+import com.wandoulabs.jodis.auto.util.LogUtil;
 import com.wandoulabs.jodis.auto.util.TimeUtil;
 
 import java.lang.reflect.InvocationHandler;
@@ -30,9 +30,10 @@ public class AutoJedisProxy implements InvocationHandler {
 
         try {
             long cost = System.currentTimeMillis()-begin;
-            String log = "`"+ TimeUtil.timeForStr(new Date())+"`"+ LogHandler.getAppName()+"`"+method.getName()+"`"+cost+"`";
+            long size = LogUtil.objectSize(args);
+            String sl = LogUtil.strL(args);
+            String log = "`"+ TimeUtil.timeForStr(new Date())+"`"+ LogHandler.getAppName()+"`"+method.getName()+"`"+size+"`"+sl+"`"+cost+"`";
             LogHandler.printFlumeLog(log);
-            System.out.println(log);
         } catch (Throwable t) {
         }
         return result;
