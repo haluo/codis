@@ -17,7 +17,7 @@ public class Test {
 
         //多个zkserver用逗号分隔，eg：zkserver1:port,zkserver2:prot
         JedisResourcePool jedisPool = new RoundRobinJedisPool("codis_local_123:2181,codis_local_125:2181", 30000, "/zk/codis/db_auto_test/proxy", config);
-        jedisPool.registerUser("com.autohome.order.center","192.168.252.44","6008");
+        jedisPool.register("com.autohome.order.center","192.168.252.44","6008");
         AutoJedis jedis = jedisPool.getAutoResource();
         jedis.set("foo","hahaha");
         String value = jedis.get("foo");

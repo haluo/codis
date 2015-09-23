@@ -51,5 +51,5 @@ public interface JedisResourcePool extends Closeable {
     AutoJedis getAutoResource();
 
 
-    void registerUser(String appName,String host,String port);
+    void register(String appName,String host,String port);
 }

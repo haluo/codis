@@ -1,6 +1,7 @@
 package com.wandoulabs.jodis.auto.log;
 
 
+import com.wandoulabs.jodis.auto.util.StringUtil;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import org.productivity.java.syslog4j.impl.log4j.Syslog4jAppender;
@@ -15,11 +16,9 @@ import java.util.concurrent.TimeUnit;
  */
 public class LogHandler {
 
-    private static String host;
-    private static String port;
     private static String appName;
 
-    public static Syslog4jAppender remoteAppender ;
+    public static Syslog4jAppender remoteAppender = null ;
 
     public static Logger rlog = Logger.getLogger("log-client-remote");
 
@@ -42,13 +41,17 @@ public class LogHandler {
     );
 
 
-    static {
+    public static void  init(String host,String port,String  appName){
+        if(StringUtil.isNotBlank(host) && StringUtil.isNotBlank(port) && StringUtil.isNotBlank(appName)) {
+            LogHandler.setAppName(appName);
+
             remoteAppender = new Syslog4jAppender();
             remoteAppender.setPort(port);
             remoteAppender.setProtocol("udp");
             remoteAppender.setSyslogHost(host);
             remoteAppender.setFacility("local7");
             remoteAppender.activateOptions();
+
             //初始化
             rlog.removeAllAppenders();
             //设置输出级别
@@ -56,6 +59,7 @@ public class LogHandler {
             //是否继承父Logger
             rlog.setAdditivity(false);
             rlog.addAppender(remoteAppender);
+        }
     }
 
 
@@ -68,25 +72,10 @@ public class LogHandler {
     }
 
 
-    public static void setHost(String host) {
-        LogHandler.host = host;
-    }
-
-    public static void setPort(String port) {
-        LogHandler.port = port;
-    }
-
     public static void setAppName(String appName) {
         LogHandler.appName = appName;
     }
 
-    public static String getHost() {
-        return host;
-    }
-
-    public static String getPort() {
-        return port;
-    }
 
     public static String getAppName() {
         return appName;

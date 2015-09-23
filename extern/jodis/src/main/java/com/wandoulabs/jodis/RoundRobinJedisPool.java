@@ -313,10 +313,8 @@ public class RoundRobinJedisPool implements JedisResourcePool {
     }
 
     @Override
-    public void registerUser(String appName, String host, String port) {
-        LogHandler.setAppName(appName);
-        LogHandler.setHost(host);
-        LogHandler.setPort(port);
+    public void register(String appName, String host, String port) {
+        LogHandler.init(host,port,appName);
     }
 
     @Override
